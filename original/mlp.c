@@ -22,8 +22,8 @@
 #define LEARNING_RATE 5 * 1e-4f
 #define DATAPOINTS 50000
 #define WEIGHT_DECAY .0f
-#define LOGISTIC 0
 #define DROPOUT 0.0
+#define LOGISTIC 0
 #define RELU 1
 #define TANH 0
 // #define RHO_TARGET 0.2f
@@ -43,7 +43,7 @@ double get_time()
 
 int main(int argc, char **argv)
 {
-
+  /* command line argument */
   if (argc > 1)
     if (0 == strcmp(argv[1], "help"))
     {
@@ -58,6 +58,7 @@ int main(int argc, char **argv)
   float *dw, *dv;               /*weight-grads*/
   float *m;                     /*dropout*/
 
+  /* allocate memory for arrays */
   x = (float *)malloc(sizeof(float) * X * B);
   w = (float *)malloc(sizeof(float) * X * H);
   dw = (float *)malloc(sizeof(float) * X * H);
@@ -72,14 +73,17 @@ int main(int argc, char **argv)
   c = (float *)malloc(sizeof(float) * Y * B);
   t = (float *)malloc(sizeof(float) * Y * B);
 
+  /* init stats */
   float smooth_act = 0.0f;
   float smooth_ce = logf(Y);
   float smooth_acc = 1.0f / Y;
 
+  /* set default values for command line arguments */
   int max_iters = argc > 1 ? atoi(argv[1]) : ITERATIONS;
   float lr = argc > 1 ? atof(argv[2]) : LEARNING_RATE;
   float decay = argc > 1 ? atof(argv[3]) : WEIGHT_DECAY;
 
+  /* load data */
   if (0 > load("../data/train-images-idx3-ubyte",
                16, X * DATAPOINTS, inputs))
     return -1;
@@ -101,9 +105,9 @@ int main(int argc, char **argv)
   double t0 = get_time();
   double start_time = t0;
 
+  /* */
   do
   {
-
     /* random sample */
     int r[B];
 
@@ -290,6 +294,7 @@ int main(int argc, char **argv)
 
   } while (iters++ < max_iters && smooth_acc < TARGET_ACC);
 
+  /* cleanup */
   free(x), free(w), free(dw);
   free(h), free(dh);
   free(m);
