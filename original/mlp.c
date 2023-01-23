@@ -1,3 +1,12 @@
+/*
+Description:
+  The MLP architecture is a 3-layer neural network with 1 hidden layer.
+  The input layer X has 784 nodes (28x28 images)
+  The hidden layer H has 1000 nodes
+  The output layer Y has 10 nodes (0-9 digits)
+  The batch size is 8.
+*/
+
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -8,15 +17,15 @@
 
 /* batch size */
 #define B 8
-/* input size */
+/* input size 28x28 images*/
 #define X 784
 /* hidden size */
-#define H 100
+#define H 1000
 /* output size */
 #define Y 10
 
 #define ITERATIONS 1000000
-#define TARGET_ACC 0.95f
+#define TARGET_ACC 0.99f
 #define STATS_INTERVAL 50000
 #define SMOOTHING 0.99999f
 #define LEARNING_RATE 5 * 1e-4f
@@ -31,8 +40,8 @@
 
 extern void randn(float *out, float mean, float std, int n);
 
-unsigned char inputs[X * DATAPOINTS];
-unsigned char labels[DATAPOINTS];
+unsigned char X_input[X * DATAPOINTS];
+unsigned char y_labels[DATAPOINTS];
 
 double get_time()
 {
@@ -79,35 +88,32 @@ int main(int argc, char **argv)
   float smooth_acc = 1.0f / Y;
 
   /* set default values for command line arguments */
-  int max_iters = argc > 1 ? atoi(argv[1]) : ITERATIONS;
+  int max_epochs = argc > 1 ? atoi(argv[1]) : ITERATIONS;
   float lr = argc > 1 ? atof(argv[2]) : LEARNING_RATE;
   float decay = argc > 1 ? atof(argv[3]) : WEIGHT_DECAY;
 
   /* load data */
-  if (0 > load("../data/train-images-idx3-ubyte",
-               16, X * DATAPOINTS, inputs))
+  if (0 > load("../data/train-images-idx3-ubyte", 16, X * DATAPOINTS, X_input))
     return -1;
-  if (0 > load("../data/train-labels-idx1-ubyte",
-               8, DATAPOINTS, labels))
+  if (0 > load("../data/train-labels-idx1-ubyte", 8, DATAPOINTS, y_labels))
     return -1;
 
   /* init weights */
   randn(w, .0f, 0.1f, X * H);
   randn(v, .0f, 0.1f, Y * H);
 
-  double gflops_per_sample =
-      (double)(2 * (X * H + H * Y) * 2) /
-      (1 << 30);
+  double gflops_per_sample = (double)(2 * (X * H + H * Y) * 2) / (1 << 30);
 
-  int samples = 0, iters = 0;
+  int samples = 0, epochs = 0;
   srand(33);
 
   double t0 = get_time();
   double start_time = t0;
 
-  /* */
+  /* TRAINING : Main Loop */
   do
   {
+    /* FEED-FORWARD begin*/
     /* random sample */
     int r[B];
 
@@ -120,9 +126,9 @@ int main(int argc, char **argv)
 
     for (int b = 0; b < B; b++)
     {
-      t[b * Y + labels[r[b]]] = 1.0f;
-      for (int i = 0; i < X; i++)
-        x[b * X + i] = inputs[r[b] * X + i] / 255.0f;
+      t[b * Y + y_labels[r[b]]] = 1.0f;
+      for (int i = 0; i < X; ++i)
+        x[b * X + i] = X_input[r[b] * X + i] / 255.0f;
     }
 
     /* h := w'x */
@@ -133,10 +139,9 @@ int main(int argc, char **argv)
     for (int j = 0; j < H; j++)
       for (int i = 0; i < X; i++)
         for (int b = 0; b < B; b++)
-          h[b * H + j] +=
-              w[j * X + i] * x[b * X + i];
+          h[b * H + j] += w[j * X + i] * x[b * X + i];
 
-    /* nonlinearity */
+    /* activation function (nonlinearity) */
     for (int j = 0; j < H * B; j++)
 #if LOGISTIC
       h[j] = 1.0f / (1.0f + expf(-h[j]));
@@ -148,6 +153,7 @@ int main(int argc, char **argv)
     h[j] = tanhf(h[j]);
 #endif
 
+    /* dropout if set*/
     if (DROPOUT > 0)
     {
       for (int j = 0; j < H * B; j++)
@@ -188,11 +194,14 @@ int main(int argc, char **argv)
         p[b * Y + k] /= sum;
     }
 
-    /* forward pass end */
-    /* bookkeeping for stats */
+    /* FEED-FORWARD end */
+
+    /* Computing stats */
     int argmax[B];
     float probmax[B];
-    for (int b = 0; b < B; b++)
+
+    /* Compute the argmax for each batch*/
+    for (int b = 0; b < B; ++b)
     {
       argmax[b] = -1;
       probmax[b] = .0f;
@@ -204,20 +213,17 @@ int main(int argc, char **argv)
           argmax[b] = k;
         }
         c[b * Y + k] = -logf(p[b * Y + k]) * t[b * Y + k];
-        smooth_ce = smooth_ce * SMOOTHING +
-                    (1.0f - SMOOTHING) * c[b * Y + k];
+        smooth_ce = smooth_ce * SMOOTHING + (1.0f - SMOOTHING) * c[b * Y + k];
       }
-      smooth_acc = smooth_acc * SMOOTHING +
-                   (1.0f - SMOOTHING) * (argmax[b] == labels[r[b]]);
+      smooth_acc = smooth_acc * SMOOTHING + (1.0f - SMOOTHING) * (argmax[b] == y_labels[r[b]]);
     }
 
-    if (0 == (samples % STATS_INTERVAL) &&
-        samples > 0)
+    /* display results */
+    if (0 == (samples % STATS_INTERVAL) && samples > 0)
     {
       float time_d = get_time() - t0;
       float samples_per_sec = STATS_INTERVAL / time_d;
-      float gflops_per_sec = samples_per_sec *
-                             gflops_per_sample;
+      float gflops_per_sec = samples_per_sec * gflops_per_sample;
       printf("[%4.3f s] "
              "acc=%3.2f%%, "
              "ce=%3.3f, "
@@ -229,7 +235,8 @@ int main(int argc, char **argv)
       t0 = get_time();
     }
 
-    /* backprop begin */
+    /* BACK-PROPAGATION begin */
+
     /* reset grads */
     memset(dh, 0, sizeof(float) * H * B);
     memset(dw, 0, sizeof(float) * H * X);
@@ -266,6 +273,7 @@ int main(int argc, char **argv)
     */
 
     /* nonlinearity on h */
+    /* activation function derivative */
     for (int j = 0; j < H * B; j++)
 #if LOGISTIC
       dh[j] = dh[j] * h[j] * (1.0f - h[j]);
@@ -277,12 +285,13 @@ int main(int argc, char **argv)
     dh[j] = dh[j] * (1.0f - h[j] * h[j]);
 #endif
 
+    /* update the weight*/
     /* dw := x * dh' */
     for (int j = 0; j < H; j++)
       for (int i = 0; i < X; i++)
         for (int b = 0; b < B; b++)
           dw[j * X + i] += x[b * X + i] * dh[b * H + j];
-    /* backprop end */
+    /* BACK-PROPAGATION end */
 
     /* adjust weights */
     for (int i = 0; i < H * X; i++)
@@ -292,7 +301,7 @@ int main(int argc, char **argv)
 
     samples += B;
 
-  } while (iters++ < max_iters && smooth_acc < TARGET_ACC);
+  } while (epochs++ < max_epochs && smooth_acc < TARGET_ACC);
 
   /* cleanup */
   free(x), free(w), free(dw);
