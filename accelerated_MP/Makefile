@@ -11,6 +11,7 @@ HEADERS:=$(wildcard *.h) Makefile
 
 TARGETS=mlp
 all : $(TARGETS)
+	rm -rf *.o
 
 %.o: %.cu $(HEADERS)
 	$(CC) -c $< -o $@ $(CC_OPTS)
