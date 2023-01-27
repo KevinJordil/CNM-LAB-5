@@ -63,6 +63,32 @@ void cuda_check_error(cudaError err)
   }
 }
 
+//for (int b = 0; b < B; b++) {
+//    for (int j = 0; j < H; j++) {
+//        for (int k = 0; k < Y; k++) {
+//            dy[b * Y + k] = p[b * Y + k] - t[b * Y + k];
+//            dv[k * H + j] += h[b * H + j] * dy[b * Y + k];
+//            dh[b * H + j] += v[k * H + j] * dy[b * Y + k];
+//        }
+//    }
+//}
+ // dim3 dimBlock(8, 16, 8);
+ // dim3 dimGrid(Y / 8 + 1, H / 16 + 1, B / 8 + 1);
+// Cuda kernel function of loop
+__global__ void backprop_kernel(float *dy, float *p, float *t, float *dv, float *v, float *dh, float *h)
+{
+    int y_idx = threadIdx.x + blockIdx.x * blockDim.x;
+    int h_idx = threadIdx.y + blockIdx.y * blockDim.y;
+    int b_idx = threadIdx.z + blockIdx.z * blockDim.z;
+
+    if (b_idx >= B || y_idx >= H || h_idx >= Y)
+        return;
+      
+    dy[b_idx * Y + h_idx] = p[b_idx * Y + h_idx] - t[b_idx * Y + h_idx];
+    dv[h_idx * H + y_idx] += h[b_idx * H + y_idx] * dy[b_idx * Y + h_idx];
+    dh[b_idx * H + y_idx] += v[h_idx * H + y_idx] * dy[b_idx * Y + h_idx];
+}
+
 int main(int argc, char **argv)
 {
   /* command line argument */
@@ -137,22 +163,6 @@ int main(int argc, char **argv)
   cudaMallocManaged(&t_gpu, B * Y * sizeof(float));
   cudaMallocManaged(&h_gpu, B * H * sizeof(float));
   cudaMallocManaged(&v_gpu, Y * H * sizeof(float));
-
-  float *p_minus_t, *temp_dh;
-  cudaMallocManaged(&p_minus_t, B * Y * sizeof(float));
-  cudaMallocManaged(&temp_dh, B * H * sizeof(float));
-
-  float alpha = 1.0f;
-  float beta = 0.0f;
-
-  // Create CUDA stream
-  cudaStream_t stream;
-  cudaStreamCreate(&stream);
-
-  // Create cublas handle and set stream
-  cublasHandle_t handle;
-  cublasCreate(&handle);
-  cublasSetStream(handle, stream);
 
   /* TRAINING : Main Loop */
   do
@@ -267,8 +277,7 @@ int main(int argc, char **argv)
                    (1.0f - SMOOTHING) * (argmax[b] == labels[r[b]]);
     }
 
-    if (0 == (samples % STATS_INTERVAL) &&
-        samples > 0)
+    if (0 == (samples % STATS_INTERVAL) && samples > 0)
     {
       float time_d = get_time() - t0;
       float samples_per_sec = STATS_INTERVAL / time_d;
@@ -308,39 +317,44 @@ int main(int argc, char **argv)
     //     for (int k = 0; k < Y; k++)
     //       dh[b * H + j] += v[k * H + j] * dy[b * Y + k];
 
-    cudaMemcpy(dy_gpu, dy, B * Y * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(dv_gpu, dv, Y * H * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(dh_gpu, dh, B * H * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(p_gpu, p, B * Y * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(t_gpu, t, B * Y * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(h_gpu, h, B * H * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(v_gpu, v, Y * H * sizeof(float), cudaMemcpyHostToDevice);
 
-    cublasSgeam(handle, CUBLAS_OP_N, CUBLAS_OP_N, Y, B, &alpha, p_gpu, Y, &beta, t_gpu, Y, p_minus_t, Y);
-    cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, Y, H, B, &alpha, p_minus_t, Y, h_gpu, H, &beta, dv_gpu, Y);
-    cublasSgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, B, H, Y, &alpha, v_gpu, H, p_minus_t, Y, &beta, temp_dh, B);
-    cublasSaxpy(handle, B * H, &alpha, temp_dh, 1, dh_gpu, 1);
 
-    // Synchronize operations
-    cudaStreamSynchronize(stream);
+    //#pragma omp parallel for
+    //for (int b = 0; b < B; b++) {
+    //    for (int j = 0; j < H; j++) {
+    //        for (int k = 0; k < Y; k++) {
+    //            dy[b * Y + k] = p[b * Y + k] - t[b * Y + k];
+    //            dv[k * H + j] += h[b * H + j] * dy[b * Y + k];
+    //            dh[b * H + j] += v[k * H + j] * dy[b * Y + k];
+    //        }
+    //    }
+    //}
 
-    // Copy data back to host memory
-    cudaMemcpy(dy, p_minus_t, B * Y * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(dv, dv_gpu, Y * H * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(dh, dh_gpu, B * H * sizeof(float), cudaMemcpyDeviceToHost);
+    // Transfer memory from CPU to GPU
+    cuda_check_error(cudaMemcpy(p_gpu, p, sizeof(float) * B * Y, cudaMemcpyHostToDevice));
+    cuda_check_error(cudaMemcpy(t_gpu, t, sizeof(float) * B * Y, cudaMemcpyHostToDevice));
+    cuda_check_error(cudaMemcpy(h_gpu, h, sizeof(float) * B * H, cudaMemcpyHostToDevice));
+    cuda_check_error(cudaMemcpy(v_gpu, v, sizeof(float) * H * Y, cudaMemcpyHostToDevice));
+    cuda_check_error(cudaMemcpy(dh_gpu, dh, sizeof(float) * B * H, cudaMemcpyHostToDevice));
+    cuda_check_error(cudaMemcpy(dv_gpu, dv, sizeof(float) * H * Y, cudaMemcpyHostToDevice));
+    cuda_check_error(cudaMemcpy(dy_gpu, dy, sizeof(float) * B * Y, cudaMemcpyHostToDevice));
 
-    /*
-    #pragma omp parallel for
-    for (int b = 0; b < B; b++) {
-        for (int j = 0; j < H; j++) {
-            for (int k = 0; k < Y; k++) {
-                dy[b * Y + k] = p[b * Y + k] - t[b * Y + k];
-                dv[k * H + j] += h[b * H + j] * dy[b * Y + k];
-                dh[b * H + j] += v[k * H + j] * dy[b * Y + k];
-            }
-        }
-    }
-    */
+    // Launch kernel
+    //dim3 dimBlock(H, Y);
+    //dim3 dimGrid(B);
+    dim3 dimBlock(8, 16, 8);
+    dim3 dimGrid(Y / 8 + 1, H / 16 + 1, B / 8 + 1);
+    backprop_kernel<<<dimGrid, dimBlock>>>(dy_gpu, p_gpu, t_gpu, dv_gpu, v_gpu, dh_gpu, h_gpu);
+
+    cuda_check_error(cudaGetLastError());
+
+    cuda_check_error(cudaDeviceSynchronize());
+
+    // Transfer memory from GPU to CPU
+    cuda_check_error(cudaMemcpy(dh, dh_gpu, sizeof(float) * B * H, cudaMemcpyDeviceToHost));
+    cuda_check_error(cudaMemcpy(dv, dv_gpu, sizeof(float) * H * Y, cudaMemcpyDeviceToHost));
+    cuda_check_error(cudaMemcpy(dy, dy_gpu, sizeof(float) * B * Y, cudaMemcpyDeviceToHost));
+
 
     /* nonlinearity on h */
     // #pragma omp parallel for
@@ -394,14 +408,13 @@ int main(int argc, char **argv)
   free(p), free(c), free(t);
 
   /* cleanup - GPU */
+  cudaFree(p_gpu);
+  cudaFree(t_gpu);
+  cudaFree(h_gpu);
+  cudaFree(v_gpu);
   cudaFree(dy_gpu);
   cudaFree(dv_gpu);
   cudaFree(dh_gpu);
-  cudaFree(p_minus_t);
-  cudaFree(temp_dh);
-
-  cublasDestroy(handle);
-  cudaStreamDestroy(stream);
 
   return 0;
 }
