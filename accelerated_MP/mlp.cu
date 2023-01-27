@@ -1,3 +1,12 @@
+/*
+Description:
+  The MLP architecture is a 3-layer neural network with 1 hidden layer.
+  The input layer X has 784 nodes (28x28 images)
+  The hidden layer H has 1000 nodes
+  The output layer Y has 10 nodes (0-9 digits)
+  The batch size is 8.
+*/
+
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -31,8 +40,6 @@
 #define LOGISTIC 0
 #define RELU 1
 #define TANH 0
-// #define RHO_TARGET 0.2f
-// #define BETA 1e-5f
 
 extern void randn(float *out, float mean, float std, int n);
 
@@ -46,6 +53,7 @@ double get_time()
   return (tv.tv_sec + tv.tv_usec * 1e-6);
 }
 
+/* Cuda check error */
 void cuda_check_error(cudaError err)
 {
   if (err != cudaSuccess)
@@ -89,6 +97,38 @@ int main(int argc, char **argv)
   c = (float *)malloc(sizeof(float) * Y * B);
   t = (float *)malloc(sizeof(float) * Y * B);
 
+  /* init stats */
+  float smooth_act = 0.0f;
+  float smooth_ce = logf(Y);
+  float smooth_acc = 1.0f / Y;
+
+  /* set default values for command line arguments */
+  int max_iters = argc > 1 ? atoi(argv[1]) : ITERATIONS;
+  float lr = argc > 1 ? atof(argv[2]) : LEARNING_RATE;
+  float decay = argc > 1 ? atof(argv[3]) : WEIGHT_DECAY;
+
+  /* load data */
+  if (0 > load("../data/train-images-idx3-ubyte",
+               16, X * DATAPOINTS, inputs))
+    return -1;
+  if (0 > load("../data/train-labels-idx1-ubyte",
+               8, DATAPOINTS, labels))
+    return -1;
+
+  /* init weights */
+  randn(w, .0f, 0.1f, X * H);
+  randn(v, .0f, 0.1f, Y * H);
+
+  double gflops_per_sample = (double)(2 * (X * H + H * Y) * 2) / (1 << 30);
+
+  int samples = 0, epochs = 0;
+  /* Fixed seed for reproducibility */
+  srand(33);
+
+  double t0 = get_time();
+  double start_time = t0;
+
+  /* Initialize memory for GPU */
   float *dy_gpu, *dv_gpu, *dh_gpu, *p_gpu, *t_gpu, *h_gpu, *v_gpu;
   cudaMallocManaged(&dy_gpu, B * Y * sizeof(float));
   cudaMallocManaged(&dv_gpu, Y * H * sizeof(float));
@@ -114,42 +154,10 @@ int main(int argc, char **argv)
   cublasCreate(&handle);
   cublasSetStream(handle, stream);
 
-
-  /* init stats */
-  float smooth_act = 0.0f;
-  float smooth_ce = logf(Y);
-  float smooth_acc = 1.0f / Y;
-
-  /* set default values for command line arguments */
-  int max_iters = argc > 1 ? atoi(argv[1]) : ITERATIONS;
-  float lr = argc > 1 ? atof(argv[2]) : LEARNING_RATE;
-  float decay = argc > 1 ? atof(argv[3]) : WEIGHT_DECAY;
-
-  /* load data */
-  if (0 > load("../data/train-images-idx3-ubyte",
-               16, X * DATAPOINTS, inputs))
-    return -1;
-  if (0 > load("../data/train-labels-idx1-ubyte",
-               8, DATAPOINTS, labels))
-    return -1;
-
-  /* init weights */
-  randn(w, .0f, 0.1f, X * H);
-  randn(v, .0f, 0.1f, Y * H);
-
-  double gflops_per_sample =
-      (double)(2 * (X * H + H * Y) * 2) /
-      (1 << 30);
-
-  int samples = 0, iters = 0;
-  srand(33);
-
-  double t0 = get_time();
-  double start_time = t0;
-
-  /* */
+  /* TRAINING : Main Loop */
   do
   {
+    /* FEED-FORWARD begin*/
     /* random sample */
     int r[B];
 
@@ -167,19 +175,19 @@ int main(int argc, char **argv)
         x[b * X + i] = inputs[r[b] * X + i] / 255.0f;
     }
 
-    /* h := w'x */
-    /* col major */
-    /* h [H rows, B cols] */
-    /* w [X rows, H cols] */
-    /* x [X rows, B cols] */
-    #pragma omp parallel for// collapse(3)
+/* h := w'x */
+/* col major */
+/* h [H rows, B cols] */
+/* w [X rows, H cols] */
+/* x [X rows, B cols] */
+#pragma omp parallel for // collapse(3)
     for (int j = 0; j < H; j++)
       for (int i = 0; i < X; i++)
         for (int b = 0; b < B; b++)
           h[b * H + j] +=
               w[j * X + i] * x[b * X + i];
 
-    /* nonlinearity */
+    /* activation function (nonlinearity) */
     for (int j = 0; j < H * B; j++)
 #if LOGISTIC
       h[j] = 1.0f / (1.0f + expf(-h[j]));
@@ -191,6 +199,7 @@ int main(int argc, char **argv)
     h[j] = tanhf(h[j]);
 #endif
 
+    /* dropout if set*/
     if (DROPOUT > 0)
     {
       for (int j = 0; j < H * B; j++)
@@ -232,10 +241,13 @@ int main(int argc, char **argv)
         p[b * Y + k] /= sum;
     }
 
-    /* forward pass end */
-    /* bookkeeping for stats */
+    /* FEED-FORWARD end */
+
+    /* Computing stats */
     int argmax[B];
     float probmax[B];
+
+    /* Compute the argmax for each batch*/
     for (int b = 0; b < B; b++)
     {
       argmax[b] = -1;
@@ -280,22 +292,21 @@ int main(int argc, char **argv)
     memset(dv, 0, sizeof(float) * H * Y);
 
     /* dy */
-    //for (int b = 0; b < B; b++)
-    //  for (int k = 0; k < Y; k++)
-    //    dy[b * Y + k] = p[b * Y + k] - t[b * Y + k];
+    // for (int b = 0; b < B; b++)
+    //   for (int k = 0; k < Y; k++)
+    //     dy[b * Y + k] = p[b * Y + k] - t[b * Y + k];
 
     /* dv := h * dy' */
-    //for (int b = 0; b < B; b++)
-    //  for (int j = 0; j < H; j++)
-    //    for (int k = 0; k < Y; k++)
-    //      dv[k * H + j] += h[b * H + j] * dy[b * Y + k];
+    // for (int b = 0; b < B; b++)
+    //   for (int j = 0; j < H; j++)
+    //     for (int k = 0; k < Y; k++)
+    //       dv[k * H + j] += h[b * H + j] * dy[b * Y + k];
 
     /* dh := v * dy */
-    //for (int b = 0; b < B; b++)
-    //  for (int j = 0; j < H; j++)
-    //    for (int k = 0; k < Y; k++)
-    //      dh[b * H + j] += v[k * H + j] * dy[b * Y + k];
-
+    // for (int b = 0; b < B; b++)
+    //   for (int j = 0; j < H; j++)
+    //     for (int k = 0; k < Y; k++)
+    //       dh[b * H + j] += v[k * H + j] * dy[b * Y + k];
 
     cudaMemcpy(dy_gpu, dy, B * Y * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(dv_gpu, dv, Y * H * sizeof(float), cudaMemcpyHostToDevice);
@@ -318,7 +329,6 @@ int main(int argc, char **argv)
     cudaMemcpy(dv, dv_gpu, Y * H * sizeof(float), cudaMemcpyDeviceToHost);
     cudaMemcpy(dh, dh_gpu, B * H * sizeof(float), cudaMemcpyDeviceToHost);
 
-
     /*
     #pragma omp parallel for
     for (int b = 0; b < B; b++) {
@@ -333,7 +343,7 @@ int main(int argc, char **argv)
     */
 
     /* nonlinearity on h */
-    //#pragma omp parallel for
+    // #pragma omp parallel for
     for (int j = 0; j < H * B; j++)
 #if LOGISTIC
       dh[j] = dh[j] * h[j] * (1.0f - h[j]);
@@ -345,32 +355,37 @@ int main(int argc, char **argv)
     dh[j] = dh[j] * (1.0f - h[j] * h[j]);
 #endif
 
-    /* dw := x * dh' */
-    #pragma omp parallel for
-    for (int j = 0; j < H; j++) {
-        for (int i = 0; i < X; i++) {
-            for (int b = 0; b < B; b++) {
-                dw[j * X + i] += x[b * X + i] * dh[b * H + j];
-            }
+/* dw := x * dh' */
+#pragma omp parallel for
+    for (int j = 0; j < H; j++)
+    {
+      for (int i = 0; i < X; i++)
+      {
+        for (int b = 0; b < B; b++)
+        {
+          dw[j * X + i] += x[b * X + i] * dh[b * H + j];
         }
+      }
     }
     /* backprop end */
 
     /* adjust weights */
-    //#pragma omp parallel for
-    for (int i = 0; i < H * X; i++) {
-        w[i] = w[i] * (1.0f - decay) - dw[i] * lr;
+    // #pragma omp parallel for
+    for (int i = 0; i < H * X; i++)
+    {
+      w[i] = w[i] * (1.0f - decay) - dw[i] * lr;
     }
-    //#pragma omp parallel for
-    for (int i = 0; i < H * Y; i++) {
-        v[i] =v[i] * (1.0f - decay) - dv[i] * lr;
+    // #pragma omp parallel for
+    for (int i = 0; i < H * Y; i++)
+    {
+      v[i] = v[i] * (1.0f - decay) - dv[i] * lr;
     }
 
     samples += B;
 
-  } while (iters++ < max_iters && smooth_acc < TARGET_ACC);
+  } while (epochs++ < max_iters && smooth_acc < TARGET_ACC);
 
-  /* cleanup */
+  /* cleanup - Main */
   free(x), free(w), free(dw);
   free(h), free(dh);
   free(m);
@@ -378,17 +393,15 @@ int main(int argc, char **argv)
   free(y), free(dy);
   free(p), free(c), free(t);
 
-  cublasDestroy(handle);
-  cudaStreamDestroy(stream);
-
-  // Free device memory
+  /* cleanup - GPU */
   cudaFree(dy_gpu);
   cudaFree(dv_gpu);
   cudaFree(dh_gpu);
   cudaFree(p_minus_t);
   cudaFree(temp_dh);
 
-
+  cublasDestroy(handle);
+  cudaStreamDestroy(stream);
 
   return 0;
 }
