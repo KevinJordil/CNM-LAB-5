@@ -8,6 +8,7 @@
 #include "rand.h"
 #include <omp.h>
 #include <cuda_runtime.h>
+#include <cublas_v2.h>
 
 /* batch size */
 #define B 8
@@ -54,15 +55,6 @@ void cuda_check_error(cudaError err)
   }
 }
 
-__global__ void myKernel(float *dy, float *dv, float *dh, float *p, float *t, float *h, float *v) {
-    int b = blockIdx.x;
-    int j = threadIdx.x;
-    int k = threadIdx.y;
-    dy[b * Y + k] = p[b * Y + k] - t[b * Y + k];
-    dv[k * H + j] += h[b * H + j] * dy[b * Y + k];
-    dh[b * H + j] += v[k * H + j] * dy[b * Y + k];
-}
-
 int main(int argc, char **argv)
 {
   /* command line argument */
@@ -75,40 +67,53 @@ int main(int argc, char **argv)
 
   omp_set_num_threads(NUM_THREADS);
 
-
-  // float *dy, float *dv, float *dh, float *p, float *t, float *h, float *v
   /* x -w-> h -v-> y */
-  float *x, *h_h, *d_h, *y, *h_p, *d_p, *h_t, *d_t, *c; /*states*/
-  float *w, *h_v, *d_v;                 /*weights*/
-  float *h_dh, *d_dh, *h_dy, *d_dy;               /*states-grads*/
-  float *dw, *h_dv, *d_dv;               /*weight-grads*/
+  float *x, *h, *y, *p, *t, *c; /*states*/
+  float *w, *v;                 /*weights*/
+  float *dh, *dy;               /*states-grads*/
+  float *dw, *dv;               /*weight-grads*/
   float *m;                     /*dropout*/
 
   /* allocate memory for arrays */
   x = (float *)malloc(sizeof(float) * X * B);
   w = (float *)malloc(sizeof(float) * X * H);
   dw = (float *)malloc(sizeof(float) * X * H);
-  h_h = (float *)malloc(sizeof(float) * H * B);
-  h_dh = (float *)malloc(sizeof(float) * H * B);
+  h = (float *)malloc(sizeof(float) * H * B);
+  dh = (float *)malloc(sizeof(float) * H * B);
   m = (float *)malloc(sizeof(float) * H * B);
-  h_v = (float *)malloc(sizeof(float) * H * Y);
-  h_dv = (float *)malloc(sizeof(float) * Y * H);
-  h_dy = (float *)malloc(sizeof(float) * Y * B);
+  v = (float *)malloc(sizeof(float) * H * Y);
+  dv = (float *)malloc(sizeof(float) * Y * H);
+  dy = (float *)malloc(sizeof(float) * Y * B);
   y = (float *)malloc(sizeof(float) * Y * B);
-  h_p = (float *)malloc(sizeof(float) * Y * B);
+  p = (float *)malloc(sizeof(float) * Y * B);
   c = (float *)malloc(sizeof(float) * Y * B);
-  h_t = (float *)malloc(sizeof(float) * Y * B);
+  t = (float *)malloc(sizeof(float) * Y * B);
 
-  cuda_check_error(cudaMalloc((void **)&d_h, sizeof(float) * H * B));
-  cuda_check_error(cudaMalloc((void **)&d_dh, sizeof(float) * H * B));
-  cuda_check_error(cudaMalloc((void **)&d_v, sizeof(float) * H * Y));
-  cuda_check_error(cudaMalloc((void **)&d_dv, sizeof(float) * Y * H));
-  cuda_check_error(cudaMalloc((void **)&d_dy, sizeof(float) * Y * B));
-  cuda_check_error(cudaMalloc((void **)&d_p, sizeof(float) * Y * B));
-  cuda_check_error(cudaMalloc((void **)&d_t, sizeof(float) * Y * B));
+  float *dy_gpu, *dv_gpu, *dh_gpu, *p_gpu, *t_gpu, *h_gpu, *v_gpu;
+  cudaMallocManaged(&dy_gpu, B * Y * sizeof(float));
+  cudaMallocManaged(&dv_gpu, Y * H * sizeof(float));
+  cudaMallocManaged(&dh_gpu, B * H * sizeof(float));
+  cudaMallocManaged(&p_gpu, B * Y * sizeof(float));
+  cudaMallocManaged(&t_gpu, B * Y * sizeof(float));
+  cudaMallocManaged(&h_gpu, B * H * sizeof(float));
+  cudaMallocManaged(&v_gpu, Y * H * sizeof(float));
 
-  dim3 threadsPerBlock(H,Y);
-  dim3 numBlocks(B);
+  float *p_minus_t, *temp_dh;
+  cudaMallocManaged(&p_minus_t, B * Y * sizeof(float));
+  cudaMallocManaged(&temp_dh, B * H * sizeof(float));
+
+  float alpha = 1.0f;
+  float beta = 0.0f;
+
+  // Create CUDA stream
+  cudaStream_t stream;
+  cudaStreamCreate(&stream);
+
+  // Create cublas handle and set stream
+  cublasHandle_t handle;
+  cublasCreate(&handle);
+  cublasSetStream(handle, stream);
+
 
   /* init stats */
   float smooth_act = 0.0f;
@@ -291,33 +296,31 @@ int main(int argc, char **argv)
     //    for (int k = 0; k < Y; k++)
     //      dh[b * H + j] += v[k * H + j] * dy[b * Y + k];
 
-    //#pragma omp parallel for
-    cuda_check_error(cudaMalloc((void **)&d_h, sizeof(float) * H * B));
-    cuda_check_error(cudaMalloc((void **)&d_dh, sizeof(float) * H * B));
-    cuda_check_error(cudaMalloc((void **)&d_v, sizeof(float) * H * Y));
-    cuda_check_error(cudaMalloc((void **)&d_dv, sizeof(float) * Y * H));
-    cuda_check_error(cudaMalloc((void **)&d_dy, sizeof(float) * Y * B));
-    cuda_check_error(cudaMalloc((void **)&d_p, sizeof(float) * Y * B));
-    cuda_check_error(cudaMalloc((void **)&d_t, sizeof(float) * Y * B));
 
+    cudaMemcpy(dy_gpu, dy, B * Y * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(dv_gpu, dv, Y * H * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(dh_gpu, dh, B * H * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(p_gpu, p, B * Y * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(t_gpu, t, B * Y * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(h_gpu, h, B * H * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(v_gpu, v, Y * H * sizeof(float), cudaMemcpyHostToDevice);
 
-    // Copy the memory from the host to the device
-    cuda_check_error(cudaMemcpy(d_h, h_h, sizeof(float) * H * B, cudaMemcpyHostToDevice));
-    cuda_check_error(cudaMemcpy(d_dh, h_dh, sizeof(float) * H * B, cudaMemcpyHostToDevice));
-    cuda_check_error(cudaMemcpy(d_v, h_v, sizeof(float) * H * Y, cudaMemcpyHostToDevice));
-    cuda_check_error(cudaMemcpy(d_dv, h_dv, sizeof(float) * Y * H, cudaMemcpyHostToDevice));
-    cuda_check_error(cudaMemcpy(d_p, h_p, sizeof(float) * Y * B, cudaMemcpyHostToDevice));
-    cuda_check_error(cudaMemcpy(d_t, h_t, sizeof(float) * Y * B, cudaMemcpyHostToDevice));
+    cublasSgeam(handle, CUBLAS_OP_N, CUBLAS_OP_N, Y, B, &alpha, p_gpu, Y, &beta, t_gpu, Y, p_minus_t, Y);
+    cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, Y, H, B, &alpha, p_minus_t, Y, h_gpu, H, &beta, dv_gpu, Y);
+    cublasSgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, B, H, Y, &alpha, v_gpu, H, p_minus_t, Y, &beta, temp_dh, B);
+    cublasSaxpy(handle, B * H, &alpha, temp_dh, 1, dh_gpu, 1);
 
-    // Launch the kernel
-    myKernel<<<numBlocks, threadsPerBlock>>>(d_dy, d_dv, d_dh, d_p, d_t, d_h, d_v);
+    // Synchronize operations
+    cudaStreamSynchronize(stream);
 
-    // Copy the memory from the device to the host
-    cuda_check_error(cudaMemcpy(h_dy, d_dy, sizeof(float) * Y * B, cudaMemcpyDeviceToHost));
-    cuda_check_error(cudaMemcpy(h_dv, d_dv, sizeof(float) * Y * H, cudaMemcpyDeviceToHost));
-    cuda_check_error(cudaMemcpy(h_dh, d_dh, sizeof(float) * H * B, cudaMemcpyDeviceToHost));
+    // Copy data back to host memory
+    cudaMemcpy(dy, p_minus_t, B * Y * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(dv, dv_gpu, Y * H * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(dh, dh_gpu, B * H * sizeof(float), cudaMemcpyDeviceToHost);
+
 
     /*
+    #pragma omp parallel for
     for (int b = 0; b < B; b++) {
         for (int j = 0; j < H; j++) {
             for (int k = 0; k < Y; k++) {
@@ -360,7 +363,7 @@ int main(int argc, char **argv)
     }
     //#pragma omp parallel for
     for (int i = 0; i < H * Y; i++) {
-        v[i] = v[i] * (1.0f - decay) - dv[i] * lr;
+        v[i] =v[i] * (1.0f - decay) - dv[i] * lr;
     }
 
     samples += B;
@@ -375,13 +378,15 @@ int main(int argc, char **argv)
   free(y), free(dy);
   free(p), free(c), free(t);
 
-  cuda_check_error(cudaFree(d_h));
-  cuda_check_error(cudaFree(d_dh));
-  cuda_check_error(cudaFree(d_v));
-  cuda_check_error(cudaFree(d_dv));
-  cuda_check_error(cudaFree(d_dy));
-  cuda_check_error(cudaFree(d_p));
-  cuda_check_error(cudaFree(d_t));
+  cublasDestroy(handle);
+  cudaStreamDestroy(stream);
+
+  // Free device memory
+  cudaFree(dy_gpu);
+  cudaFree(dv_gpu);
+  cudaFree(dh_gpu);
+  cudaFree(p_minus_t);
+  cudaFree(temp_dh);
 
 
 

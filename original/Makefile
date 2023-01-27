@@ -1,7 +1,7 @@
 CC=gcc
 LD=gcc
 
-OPT_LEVEL=-Ofast
+OPT_LEVEL=-O3
 
 CC_OPTS=$(OPT_LEVEL) -fPIC -Wall -Wno-unused-variable -Werror -Wfatal-errors
 

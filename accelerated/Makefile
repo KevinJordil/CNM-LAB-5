@@ -1,22 +1,19 @@
-CC=gcc
-LD=gcc
+NVCC=nvcc
 
-OPT_LEVEL=-Ofast
+OPT_LEVEL=-O3 -lcublas
 
-CC_OPTS=$(OPT_LEVEL) -fPIC -Wall -Wno-unused-variable -Werror -Wfatal-errors
+NVCC_OPTS=$(OPT_LEVEL)
 
 HEADERS:=$(wildcard *.h) Makefile
 
-.SUFFIXES:
+TARGET=mlp
+all: $(TARGET)
 
-TARGETS=mlp
-all : $(TARGETS)
+%.o: %.cu $(HEADERS)
+	$(NVCC) -c $< -o $@ $(NVCC_OPTS)
 
-%.o: %.c $(HEADERS)
-	$(CC) -c $< -o $@ $(CC_OPTS)
-
-%: %.o rand.o
-	$(CC) $^ -o $@ $(CC_OPTS) -lm
+$(TARGET): mlp.o
+	$(NVCC) $^ -o $@ $(NVCC_OPTS)
 
 clean:
-	rm -rf $(TARGETS) *.o
+	rm -rf $(TARGET) *.o
