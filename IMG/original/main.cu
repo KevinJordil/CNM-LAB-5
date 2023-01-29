@@ -29,6 +29,8 @@ int main(int argc, char *argv[])
 
     // Start time
     double start = static_cast<double>(getTickCount());
+
+    // Convert to grayscale
     for (int y = 0; y < height; y++)
     {
         for (int x = 0; x < width; x++)

@@ -66,91 +66,23 @@ void cuda_check_error(cudaError err)
 // Cuda kernel function of loop
 __global__ void backprop_kernel(float *p, float *t, float *dv, float *v, float *dh, float *h)
 {
-  int y_idx = threadIdx.x + blockIdx.x * blockDim.x;
-  int h_idx = threadIdx.y + blockIdx.y * blockDim.y;
+    int y_idx = threadIdx.x + blockIdx.x * blockDim.x;
+    int h_idx = threadIdx.y + blockIdx.y * blockDim.y;
 
-  if (y_idx >= H || h_idx >= Y)
-    return;
+    if (y_idx >= H || h_idx >= Y)
+        return;
 
-  dv[h_idx * H + y_idx] = 0.0f;
-  dh[h_idx * H + y_idx] = 0.0f;
+    float dy, dh_gpu, dv_gpu;
 
-  __syncthreads();
+    for(int b_idx = 0; b_idx < B; b_idx++){
+      dy = p[b_idx * Y + h_idx] - t[b_idx * Y + h_idx];
+      dv_gpu = h[b_idx * H + y_idx] * dy;
+      dh_gpu = v[h_idx * H + y_idx] * dy;
+      atomicAdd(&dv[h_idx * H + y_idx], dv_gpu);
+      atomicAdd(&dh[b_idx * H + y_idx], dh_gpu);
+    }
+      
 
-  float dy, dh_gpu, dv_gpu;
-
-  for (int b_idx = 0; b_idx < B; b_idx++)
-  {
-    dy = p[b_idx * Y + h_idx] - t[b_idx * Y + h_idx];
-    dv_gpu = h[b_idx * H + y_idx] * dy;
-    dh_gpu = v[h_idx * H + y_idx] * dy;
-    atomicAdd(&dv[h_idx * H + y_idx], dv_gpu);
-    atomicAdd(&dh[b_idx * H + y_idx], dh_gpu);
-  }
-}
-
-//     /* nonlinearity on h */
-//     // #pragma omp parallel for
-//     for (int j = 0; j < H * B; j++)
-// #if LOGISTIC
-//       dh[j] = dh[j] * h[j] * (1.0f - h[j]);
-// #endif
-// #if RELU
-//     dh[j] = dh[j] * h[j];
-// #endif
-// #if TANH
-//     dh[j] = dh[j] * (1.0f - h[j] * h[j]);
-// #endif
-
-__global__ void nonlinearity_kernel(float *dh, float *h)
-{
-  int h_idx = threadIdx.x + blockIdx.x * blockDim.x;
-
-  if (h_idx >= H * B)
-    return;
-
-  dh[h_idx] = dh[h_idx] * h[h_idx];
-}
-
-__global__ void set_dw_zero_kernel(float *dw)
-{
-  int idx = threadIdx.x + blockDim.x * blockIdx.x;
-  int idy = threadIdx.y + blockDim.y * blockIdx.y;
-  if (idx < H && idy < X)
-  {
-    dw[idx * X + idy] = 0.0f;
-  }
-}
-
-// for (int j = 0; j < H; j++)
-// {
-//   for (int i = 0; i < X; i++)
-//   {
-//     for (int b = 0; b < B; b++)
-//     {
-//       dw[j * X + i] += x[b * X + i] * dh[b * H + j];
-//     }
-//   }
-// }
-__global__ void update_weights_kernel(float *dw, float *x, float *dh)
-{
-  int x_idx = threadIdx.x + blockIdx.x * blockDim.x;
-  int h_idx = threadIdx.y + blockIdx.y * blockDim.y;
-
-  if (x_idx >= X || h_idx >= H)
-    return;
-
-  //dw[h_idx * X + x_idx] = 0.0f;
-
-  //__syncthreads();
-
-  float dw_gpu;
-
-  for (int b_idx = 0; b_idx < B; b_idx++)
-  {
-    dw_gpu = x[b_idx * X + x_idx] * dh[b_idx * H + h_idx];
-    atomicAdd(&dw[h_idx * X + x_idx], dw_gpu);
-  }
 }
 
 int main(int argc, char **argv)
@@ -173,24 +105,19 @@ int main(int argc, char **argv)
   float *m;                     /*dropout*/
 
   /* allocate memory for arrays */
+  x = (float *)malloc(sizeof(float) * X * B);
   w = (float *)malloc(sizeof(float) * X * H);
+  dw = (float *)malloc(sizeof(float) * X * H);
+  h = (float *)malloc(sizeof(float) * H * B);
+  dh = (float *)malloc(sizeof(float) * H * B);
   m = (float *)malloc(sizeof(float) * H * B);
+  v = (float *)malloc(sizeof(float) * H * Y);
+  dv = (float *)malloc(sizeof(float) * Y * H);
+  dy = (float *)malloc(sizeof(float) * Y * B);
   y = (float *)malloc(sizeof(float) * Y * B);
+  p = (float *)malloc(sizeof(float) * Y * B);
   c = (float *)malloc(sizeof(float) * Y * B);
-
-  /* Initialize memory for GPU */
-  cuda_check_error(cudaMallocManaged(&x, X * B * sizeof(float)));
-  cuda_check_error(cudaMallocManaged(&dw, X * H * sizeof(float)));
-  cuda_check_error(cudaMallocManaged(&dy, B * Y * sizeof(float)));
-  cuda_check_error(cudaMallocManaged(&dv, Y * H * sizeof(float)));
-  cuda_check_error(cudaMallocManaged(&dh, B * H * sizeof(float)));
-  cuda_check_error(cudaMallocManaged(&p, B * Y * sizeof(float)));
-  cuda_check_error(cudaMallocManaged(&t, B * Y * sizeof(float)));
-  cuda_check_error(cudaMallocManaged(&h, B * H * sizeof(float)));
-  cuda_check_error(cudaMallocManaged(&v, Y * H * sizeof(float)));
-
-  dim3 dimBlock(1, 1, 1);
-  dim3 dimGrid(1, 1, 1);
+  t = (float *)malloc(sizeof(float) * Y * B);
 
   /* init stats */
   float smooth_act = 0.0f;
@@ -223,6 +150,16 @@ int main(int argc, char **argv)
   double t0 = get_time();
   double start_time = t0;
 
+  /* Initialize memory for GPU */
+  float *dy_gpu, *dv_gpu, *dh_gpu, *p_gpu, *t_gpu, *h_gpu, *v_gpu;
+  cudaMallocManaged(&dy_gpu, B * Y * sizeof(float));
+  cudaMallocManaged(&dv_gpu, Y * H * sizeof(float));
+  cudaMallocManaged(&dh_gpu, B * H * sizeof(float));
+  cudaMallocManaged(&p_gpu, B * Y * sizeof(float));
+  cudaMallocManaged(&t_gpu, B * Y * sizeof(float));
+  cudaMallocManaged(&h_gpu, B * H * sizeof(float));
+  cudaMallocManaged(&v_gpu, Y * H * sizeof(float));
+
   /* TRAINING : Main Loop */
   do
   {
@@ -244,11 +181,11 @@ int main(int argc, char **argv)
         x[b * X + i] = inputs[r[b] * X + i] / 255.0f;
     }
 
-    /* h := w'x */
-    /* col major */
-    /* h [H rows, B cols] */
-    /* w [X rows, H cols] */
-    /* x [X rows, B cols] */
+/* h := w'x */
+/* col major */
+/* h [H rows, B cols] */
+/* w [X rows, H cols] */
+/* x [X rows, B cols] */
 #pragma omp parallel for // collapse(3)
     for (int j = 0; j < H; j++)
       for (int i = 0; i < X; i++)
@@ -284,9 +221,8 @@ int main(int argc, char **argv)
 
     smooth_act = SMOOTHING * smooth_act + (1.0f - SMOOTHING) * act_sum / (H * B);
 
-/* y := vh */
-/* col major */
-#pragma omp parallel for // collapse(3)
+    /* y := vh */
+    /* col major */
     for (int b = 0; b < B; b++)
       for (int j = 0; j < H; j++)
         for (int k = 0; k < Y; k++)
@@ -356,112 +292,66 @@ int main(int argc, char **argv)
 
     /* backprop begin */
     /* reset grads */
-    // cuda_check_error(cudaMemset(dh, 0, sizeof(float) * H * B));
-    // cuda_check_error(cudaMemset(dw, 0, sizeof(float) * H * X));
-    // cuda_check_error(cudaMemset(dv, 0, sizeof(float) * H * Y));
-
-    /* dy */
-    // for (int b = 0; b < B; b++)
-    //   for (int k = 0; k < Y; k++)
-    //     dy[b * Y + k] = p[b * Y + k] - t[b * Y + k];
-
-    /* dv := h * dy' */
-    // for (int b = 0; b < B; b++)
-    //   for (int j = 0; j < H; j++)
-    //     for (int k = 0; k < Y; k++)
-    //       dv[k * H + j] += h[b * H + j] * dy[b * Y + k];
-
-    /* dh := v * dy */
-    // for (int b = 0; b < B; b++)
-    //   for (int j = 0; j < H; j++)
-    //     for (int k = 0; k < Y; k++)
-    //       dh[b * H + j] += v[k * H + j] * dy[b * Y + k];
-
-    // #pragma omp parallel for
-    // for (int b = 0; b < B; b++) {
-    //     for (int j = 0; j < H; j++) {
-    //         for (int k = 0; k < Y; k++) {
-    //             dy[b * Y + k] = p[b * Y + k] - t[b * Y + k];
-    //             dv[k * H + j] += h[b * H + j] * dy[b * Y + k];
-    //             dh[b * H + j] += v[k * H + j] * dy[b * Y + k];
-    //         }
-    //     }
-    // }
+    memset(dw, 0, sizeof(float) * H * X);
 
     // Transfer memory from CPU to GPU
-    // Launch kernel
-    dimBlock = dim3(32, 32, 1);
-    // dim3 dimGrid(Y / 8 + 1, H / 16 + 1, B / 8 + 1);
-    dimGrid = dim3(Y / 32 + 1, H / 32 + 1, 1);
-    backprop_kernel<<<dimGrid, dimBlock>>>(p, t, dv, v, dh, h);
+    cuda_check_error(cudaMemcpy(p_gpu, p, sizeof(float) * B * Y, cudaMemcpyHostToDevice));
+    cuda_check_error(cudaMemcpy(t_gpu, t, sizeof(float) * B * Y, cudaMemcpyHostToDevice));
+    cuda_check_error(cudaMemcpy(h_gpu, h, sizeof(float) * B * H, cudaMemcpyHostToDevice));
+    cuda_check_error(cudaMemcpy(v_gpu, v, sizeof(float) * H * Y, cudaMemcpyHostToDevice));
+    cuda_check_error(cudaMemset(dh_gpu, 0, sizeof(float) * B * H));
+    cuda_check_error(cudaMemset(dv_gpu, 0, sizeof(float) * H * Y));
 
+    // Launch kernel
+    dim3 dimBlock(32, 32, 1);
+    dim3 dimGrid(Y / 32 + 1, H / 32 + 1, 1);
+    backprop_kernel<<<dimGrid, dimBlock>>>(p_gpu, t_gpu, dv_gpu, v_gpu, dh_gpu, h_gpu);
+
+    // Check for errors on CUDA kernel launch
     cuda_check_error(cudaGetLastError());
 
+    // Synchronize threads
     cuda_check_error(cudaDeviceSynchronize());
 
     // Transfer memory from GPU to CPU
+    cuda_check_error(cudaMemcpy(dh, dh_gpu, sizeof(float) * B * H, cudaMemcpyDeviceToHost));
+    cuda_check_error(cudaMemcpy(dv, dv_gpu, sizeof(float) * H * Y, cudaMemcpyDeviceToHost));
+
 
     /* nonlinearity on h */
     // #pragma omp parallel for
-    //     for (int j = 0; j < H * B; j++)
-    // #if LOGISTIC
-    //       dh[j] = dh[j] * h[j] * (1.0f - h[j]);
-    // #endif
-    // #if RELU
-    //     dh[j] = dh[j] * h[j];
-    // #endif
-    // #if TANH
-    //     dh[j] = dh[j] * (1.0f - h[j] * h[j]);
-    // #endif
-    dimBlock = dim3(32, 32, 1);
-    dimGrid = dim3(H / 32 + 1, B / 32 + 1, 1);
-    nonlinearity_kernel<<<dimGrid, dimBlock>>>(dh, h);
+    for (int j = 0; j < H * B; j++)
+#if LOGISTIC
+      dh[j] = dh[j] * h[j] * (1.0f - h[j]);
+#endif
+#if RELU
+    dh[j] = dh[j] * h[j];
+#endif
+#if TANH
+    dh[j] = dh[j] * (1.0f - h[j] * h[j]);
+#endif
 
-    cuda_check_error(cudaGetLastError());
-
-    cuda_check_error(cudaDeviceSynchronize());
-
-    /* dw := x * dh' */
-    // #pragma omp parallel for
-    // for (int j = 0; j < H; j++)
-    // {
-    //   for (int i = 0; i < X; i++)
-    //   {
-    //     for (int b = 0; b < B; b++)
-    //     {
-    //       dw[j * X + i] += x[b * X + i] * dh[b * H + j];
-    //     }
-    //   }
-    // }
-
-    dimBlock = dim3(32, 32);
-    dimGrid = dim3((X + 32 - 1) / 32, (H + 32 - 1) / 32);
-
-    set_dw_zero_kernel<<<dimGrid, dimBlock>>>(dw);
-
-    cuda_check_error(cudaGetLastError());
-
-    cuda_check_error(cudaDeviceSynchronize());
-
-
-    dimBlock = dim3(32, 32, 1);
-    dimGrid = dim3(X / 32 + 1, H / 32 + 1, 1);
-
-    update_weights_kernel<<<dimGrid, dimBlock>>>(dw, x, dh);
-
-    cuda_check_error(cudaGetLastError());
-
-    cuda_check_error(cudaDeviceSynchronize());
-
-/* backprop end */
-
-/* adjust weights */
+/* dw := x * dh' */
 #pragma omp parallel for
+    for (int j = 0; j < H; j++)
+    {
+      for (int i = 0; i < X; i++)
+      {
+        for (int b = 0; b < B; b++)
+        {
+          dw[j * X + i] += x[b * X + i] * dh[b * H + j];
+        }
+      }
+    }
+    /* backprop end */
+
+    /* adjust weights */
+    // #pragma omp parallel for
     for (int i = 0; i < H * X; i++)
     {
       w[i] = w[i] * (1.0f - decay) - dw[i] * lr;
     }
-#pragma omp parallel for
+    // #pragma omp parallel for
     for (int i = 0; i < H * Y; i++)
     {
       v[i] = v[i] * (1.0f - decay) - dv[i] * lr;
@@ -471,23 +361,22 @@ int main(int argc, char **argv)
 
   } while (epochs++ < max_iters && smooth_acc < TARGET_ACC);
 
-  // Print total time
-  printf("Total time: %f\n", get_time() - start_time);
-
   /* cleanup - Main */
   free(x), free(w), free(dw);
+  free(h), free(dh);
   free(m);
-  free(y);
-  free(c);
+  free(v), free(dv);
+  free(y), free(dy);
+  free(p), free(c), free(t);
 
   /* cleanup - GPU */
-  cudaFree(p);
-  cudaFree(t);
-  cudaFree(h);
-  cudaFree(v);
-  cudaFree(dy);
-  cudaFree(dv);
-  cudaFree(dh);
+  cudaFree(p_gpu);
+  cudaFree(t_gpu);
+  cudaFree(h_gpu);
+  cudaFree(v_gpu);
+  cudaFree(dy_gpu);
+  cudaFree(dv_gpu);
+  cudaFree(dh_gpu);
 
   return 0;
 }
