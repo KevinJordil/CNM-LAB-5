@@ -1,0 +1,13 @@
+cnm@cnmlab:~/app/ori$ ./main chicky_512_512.png
+Time elapsed: 3.473367 ms
+cnm@cnmlab:~/app/ori$ ./main avatar_5000_2381.jpg
+Time elapsed: 150.872315 ms
+cnm@cnmlab:~/app/ori$ ./main winter_10667_6000.jpg
+Time elapsed: 799.631688 ms
+
+cnm@cnmlab:~/app/acc$ ./main chicky_512_512.png
+Time elapsed: 2.438826 ms
+cnm@cnmlab:~/app/acc$ ./main avatar_5000_2381.jpg
+Time elapsed: 77.269110 ms
+cnm@cnmlab:~/app/acc$ ./main winter_10667_6000.jpg
+Time elapsed: 267.553274 ms
