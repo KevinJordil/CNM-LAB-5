@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.22 (TeX Live 2022/dev/Debian) (preloaded format=pdflatex 2022.4.28)  30 JAN 2023 12:14
+This is pdfTeX, Version 3.141592653-2.6-1.40.22 (TeX Live 2022/dev/Debian) (preloaded format=pdflatex 2022.4.28)  30 JAN 2023 14:54
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -649,38 +649,49 @@ LaTeX Font Info:    Font shape `T1/Roboto-LF/b/n' aliased to
 (Font)              `T1/Roboto-LF/bold/n' on input line 56.
 LaTeX Font Info:    Font shape `T1/Roboto-LF/bold/n' will be
 (Font)              scaled to size 14.4pt on input line 56.
-LaTeX Font Info:    Trying to load font information for TS1+Roboto-LF on input line 61.
+LaTeX Font Info:    Font shape `T1/Roboto-LF/b/n' aliased to
+(Font)              `T1/Roboto-LF/bold/n' on input line 58.
+LaTeX Font Info:    Font shape `T1/Roboto-LF/bold/n' will be
+(Font)              scaled to size 10.95pt on input line 58.
+LaTeX Font Info:    Trying to load font information for TS1+Roboto-LF on input line 65.
  (/usr/share/texlive/texmf-dist/tex/latex/roboto/TS1Roboto-LF.fd
 File: TS1Roboto-LF.fd 2019/12/11 (autoinst) Font definitions for TS1/Roboto-LF.
 )
 LaTeX Font Info:    Font shape `TS1/Roboto-LF/l/n' aliased to
-(Font)              `TS1/Roboto-LF/light/n' on input line 61.
+(Font)              `TS1/Roboto-LF/light/n' on input line 65.
 LaTeX Font Info:    Font shape `TS1/Roboto-LF/light/n' will be
-(Font)              scaled to size 10.95pt on input line 61.
- 
-AED: lastpage setting LastPage
+(Font)              scaled to size 10.95pt on input line 65.
 LaTeX Font Info:    Font shape `T1/Roboto-LF/l/n' aliased to
-(Font)              `T1/Roboto-LF/light/n' on input line 72.
+(Font)              `T1/Roboto-LF/light/n' on input line 92.
 LaTeX Font Info:    Font shape `T1/Roboto-LF/light/n' will be
-(Font)              scaled to size 10.0pt on input line 72.
-[1] (./student_template.aux)
+(Font)              scaled to size 10.0pt on input line 92.
+ [1]
+
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+[2] 
+AED: lastpage setting LastPage
+[3] [4] (./student_template.aux)
 
 LaTeX Font Warning: Some font shapes were not available, defaults substituted.
 
  ) 
 Here is how much of TeX's memory you used:
- 21825 strings out of 478287
- 468240 string characters out of 5849289
- 764068 words of memory out of 5000000
- 39616 multiletter control sequences out of 15000+600000
- 524131 words of font info for 65 fonts, out of 8000000 for 9000
+ 21832 strings out of 478287
+ 468398 string characters out of 5849289
+ 792100 words of memory out of 5000000
+ 39622 multiletter control sequences out of 15000+600000
+ 529352 words of font info for 67 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 95i,11n,102p,578b,309s stack positions out of 5000i,500n,10000p,200000b,80000s
-{/usr/share/texlive/texmf-dist/fonts/enc/dvips/roboto/rbto_ocbbsb.enc}{/usr/share/texlive/texmf-dist/fonts/enc/dvips/roboto/rbto_b5rac7.enc}{/usr/share/texlive/texmf-dist/fonts/enc/dvips/roboto/rbto_shbyjm.enc}</usr/share/texlive/texmf-dist/fonts/type1/google/roboto/Roboto-Bold.pfb></usr/share/texlive/texmf-dist/fonts/type1/google/roboto/Roboto-Light.pfb></usr/share/texlive/texmf-dist/fonts/type1/google/roboto/Roboto-LightItalic.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi8.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb>
-Output written on student_template.pdf (2 pages, 131906 bytes).
+ 95i,12n,102p,578b,339s stack positions out of 5000i,500n,10000p,200000b,80000s
+{/usr/share/texlive/texmf-dist/fonts/enc/dvips/roboto/rbto_ocbbsb.enc}{/usr/share/texlive/texmf-dist/fonts/enc/dvips/roboto/rbto_b5rac7.enc}{/usr/share/texlive/texmf-dist/fonts/enc/dvips/roboto/rbto_shbyjm.enc}</usr/share/texlive/texmf-dist/fonts/type1/google/roboto/Roboto-Bold.pfb></usr/share/texlive/texmf-dist/fonts/type1/google/roboto/Roboto-Light.pfb></usr/share/texlive/texmf-dist/fonts/type1/google/roboto/Roboto-LightItalic.pfb>
+Output written on student_template.pdf (5 pages, 122607 bytes).
 PDF statistics:
- 92 PDF objects out of 1000 (max. 8388607)
- 47 compressed objects within 1 object stream
+ 86 PDF objects out of 1000 (max. 8388607)
+ 44 compressed objects within 1 object stream
  0 named destinations out of 1000 (max. 500000)
  162 words of extra memory for PDF output out of 10000 (max. 10000000)
 
