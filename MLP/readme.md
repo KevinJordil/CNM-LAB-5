@@ -16,7 +16,18 @@ Total time: 575.676547
 
 ## Accelerated OpenMP only
 
-TODO
+```
+cnm@cnmlab:~/CNM-MLP-C/MLP/accelerated_only_MP$ ./mlp
+[46.092 s] acc=40.99%, ce=0.045, 1084.79 samples/sec, 3.21 gflop/s
+[92.241 s] acc=61.63%, ce=0.022, 1083.43 samples/sec, 3.20 gflop/s
+[138.231 s] acc=74.50%, ce=0.019, 1087.20 samples/sec, 3.22 gflop/s
+[184.198 s] acc=82.59%, ce=0.016, 1087.76 samples/sec, 3.22 gflop/s
+[230.153 s] acc=87.68%, ce=0.015, 1088.01 samples/sec, 3.22 gflop/s
+[276.135 s] acc=90.91%, ce=0.013, 1087.40 samples/sec, 3.22 gflop/s
+[322.124 s] acc=93.01%, ce=0.013, 1087.23 samples/sec, 3.22 gflop/s
+[368.109 s] acc=94.43%, ce=0.012, 1087.32 samples/sec, 3.22 gflop/s
+Total time: 393.993599
+```
 
 
 ## Accelerated OpenMP and CUDA
@@ -24,38 +35,39 @@ TODO
 ```
 cnm@cnmlab:~/CNM-MLP-C/MLP/accelerated$ sudo /usr/local/cuda/bin/nvprof ./mlp
 [sudo] password for cnm:
-==23248== NVPROF is profiling process 23248, command: ./mlp
-==23248== Warning: Unified Memory Profiling is not supported on the underlying platform. System requirements for unified memory can be found at: http://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#um-requirements
-[58.031 s] acc=36.72%, ce=0.061, 861.60 samples/sec, 2.55 gflop/s
-[116.665 s] acc=57.61%, ce=0.034, 852.75 samples/sec, 2.52 gflop/s
-[174.413 s] acc=70.85%, ce=0.029, 865.83 samples/sec, 2.56 gflop/s
-[232.808 s] acc=79.37%, ce=0.025, 856.24 samples/sec, 2.53 gflop/s
-[291.408 s] acc=84.73%, ce=0.024, 853.25 samples/sec, 2.52 gflop/s
-[348.941 s] acc=88.17%, ce=0.021, 869.07 samples/sec, 2.57 gflop/s
-[407.068 s] acc=90.38%, ce=0.021, 860.18 samples/sec, 2.54 gflop/s
-[463.568 s] acc=91.87%, ce=0.019, 884.95 samples/sec, 2.62 gflop/s
-[520.667 s] acc=92.86%, ce=0.020, 875.68 samples/sec, 2.59 gflop/s
-[577.546 s] acc=93.56%, ce=0.018, 879.06 samples/sec, 2.60 gflop/s
-[634.099 s] acc=94.03%, ce=0.018, 884.12 samples/sec, 2.62 gflop/s
-[691.713 s] acc=94.48%, ce=0.017, 867.84 samples/sec, 2.57 gflop/s
-[748.778 s] acc=94.74%, ce=0.016, 876.20 samples/sec, 2.59 gflop/s
-==23248== Profiling application: ./mlp
-==23248== Profiling result:
+==27977== NVPROF is profiling process 27977, command: ./mlp
+==27977== Warning: Unified Memory Profiling is not supported on the underlying platform. System requirements for unified memory can be found at: http://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#um-requirements
+[64.577 s] acc=36.72%, ce=0.061, 774.27 samples/sec, 2.29 gflop/s
+[130.425 s] acc=57.61%, ce=0.034, 759.32 samples/sec, 2.25 gflop/s
+[195.328 s] acc=70.85%, ce=0.029, 770.39 samples/sec, 2.28 gflop/s
+[261.072 s] acc=79.38%, ce=0.025, 760.52 samples/sec, 2.25 gflop/s
+[326.487 s] acc=84.74%, ce=0.024, 764.35 samples/sec, 2.26 gflop/s
+[391.392 s] acc=88.17%, ce=0.021, 770.37 samples/sec, 2.28 gflop/s
+[455.994 s] acc=90.38%, ce=0.021, 773.96 samples/sec, 2.29 gflop/s
+[519.951 s] acc=91.87%, ce=0.019, 781.79 samples/sec, 2.31 gflop/s
+[584.651 s] acc=92.86%, ce=0.020, 772.79 samples/sec, 2.29 gflop/s
+[649.924 s] acc=93.56%, ce=0.018, 766.02 samples/sec, 2.27 gflop/s
+[714.872 s] acc=94.03%, ce=0.018, 769.84 samples/sec, 2.28 gflop/s
+[780.575 s] acc=94.48%, ce=0.017, 761.00 samples/sec, 2.25 gflop/s
+[845.612 s] acc=94.74%, ce=0.016, 768.80 samples/sec, 2.27 gflop/s
+Total time: 891.121454
+==27977== Profiling application: ./mlp
+==27977== Profiling result:
             Type  Time(%)      Time     Calls       Avg       Min       Max  Name
- GPU activities:   47.10%  15.4144s    410754  37.526us  2.9160us  989.29us  [CUDA memcpy HtoH]
-                   35.72%  11.6899s     68459  170.76us  166.36us  175.16us  backprop_kernel(float*, float*, float*, float*, float*, float*)
-                   17.18%  5.62428s    136918  41.077us  40.989us  43.335us  [CUDA memset]
-      API calls:   74.06%  144.327s    410754  351.37us  130.84us  119.38ms  cudaMemcpy
-                   13.25%  25.8131s    136918  188.53us  151.10us  2.8159ms  cudaMemset
-                    9.04%  17.6243s     68459  257.44us  73.490us  1.1777ms  cudaDeviceSynchronize
-                    3.44%  6.69693s     68459  97.823us  87.605us  975.48us  cudaLaunchKernel
-                    0.17%  332.98ms         7  47.569ms  87.709us  332.35ms  cudaMallocManaged
-                    0.04%  76.176ms     68459  1.1120us     677ns  49.740us  cudaGetLastError
-                    0.00%  936.83us         7  133.83us  104.22us  257.61us  cudaFree
-                    0.00%  127.87us        97  1.3180us     625ns  27.761us  cuDeviceGetAttribute
-                    0.00%  13.854us         1  13.854us  13.854us  13.854us  cuDeviceTotalMem
-                    0.00%  6.7190us         3  2.2390us  1.3540us  3.3340us  cuDeviceGetCount
-                    0.00%  3.3850us         2  1.6920us  1.3020us  2.0830us  cuDeviceGet
-                    0.00%  2.0320us         1  2.0320us  2.0320us  2.0320us  cuDeviceGetName
-                    0.00%     990ns         1     990ns     990ns     990ns  cuDeviceGetUuid
+ GPU activities:   47.10%  15.4163s    410754  37.531us  2.9160us  991.89us  [CUDA memcpy HtoH]
+                   35.72%  11.6917s     68459  170.78us  166.57us  175.52us  backprop_kernel(float*, float*, float*, float*, float*, float*)
+                   17.18%  5.62353s    136918  41.072us  40.989us  43.334us  [CUDA memset]
+      API calls:   74.08%  145.662s    410754  354.62us  135.57us  119.92ms  cudaMemcpy
+                   13.21%  25.9788s    136918  189.74us  149.90us  3.9103ms  cudaMemset
+                    9.01%  17.7185s     68459  258.82us  73.803us  4.9247ms  cudaDeviceSynchronize
+                    3.49%  6.86282s     68459  100.25us  89.429us  987.88us  cudaLaunchKernel
+                    0.18%  344.80ms         7  49.257ms  92.450us  344.14ms  cudaMallocManaged
+                    0.04%  72.091ms     68459  1.0530us     677ns  73.908us  cudaGetLastError
+                    0.00%  953.77us         7  136.25us  105.84us  260.63us  cudaFree
+                    0.00%  108.55us        97  1.1190us     572ns  26.876us  cuDeviceGetAttribute
+                    0.00%  10.521us         1  10.521us  10.521us  10.521us  cuDeviceTotalMem
+                    0.00%  7.3430us         3  2.4470us  1.5620us  3.6460us  cuDeviceGetCount
+                    0.00%  3.8540us         2  1.9270us  1.3020us  2.5520us  cuDeviceGet
+                    0.00%  1.5100us         1  1.5100us  1.5100us  1.5100us  cuDeviceGetName
+                    0.00%     938ns         1     938ns     938ns     938ns  cuDeviceGetUuid
 ```

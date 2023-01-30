@@ -14,14 +14,11 @@ Description:
 #include <math.h>
 #include <sys/time.h>
 #include "io.h"
-#include "rand.h"
 #include <omp.h>
-#include <cuda_runtime.h>
-#include <cublas_v2.h>
 
 /* batch size */
 #define B 10
-/* input size */
+/* input size 28x28 images*/
 #define X 784
 /* hidden size */
 #define H 1000
@@ -43,46 +40,14 @@ Description:
 
 extern void randn(float *out, float mean, float std, int n);
 
-unsigned char inputs[X * DATAPOINTS];
-unsigned char labels[DATAPOINTS];
+unsigned char X_input[X * DATAPOINTS];
+unsigned char y_labels[DATAPOINTS];
 
 double get_time()
 {
   struct timeval tv;
   gettimeofday(&tv, NULL);
   return (tv.tv_sec + tv.tv_usec * 1e-6);
-}
-
-/* Cuda check error */
-void cuda_check_error(cudaError err)
-{
-  if (err != cudaSuccess)
-  {
-    printf("CUDA error (%d): %s  \n", err, cudaGetErrorString(err));
-    exit(-1);
-  }
-}
-
-// Cuda kernel function of loop
-__global__ void backprop_kernel(float *p, float *t, float *dv, float *v, float *dh, float *h)
-{
-    int y_idx = threadIdx.x + blockIdx.x * blockDim.x;
-    int h_idx = threadIdx.y + blockIdx.y * blockDim.y;
-
-    if (y_idx >= H || h_idx >= Y)
-        return;
-
-    float dy, dh_gpu, dv_gpu;
-
-    for(int b_idx = 0; b_idx < B; b_idx++){
-      dy = p[b_idx * Y + h_idx] - t[b_idx * Y + h_idx];
-      dv_gpu = h[b_idx * H + y_idx] * dy;
-      dh_gpu = v[h_idx * H + y_idx] * dy;
-      atomicAdd(&dv[h_idx * H + y_idx], dv_gpu);
-      atomicAdd(&dh[b_idx * H + y_idx], dh_gpu);
-    }
-      
-
 }
 
 int main(int argc, char **argv)
@@ -125,16 +90,14 @@ int main(int argc, char **argv)
   float smooth_acc = 1.0f / Y;
 
   /* set default values for command line arguments */
-  int max_iters = argc > 1 ? atoi(argv[1]) : ITERATIONS;
+  int max_epochs = argc > 1 ? atoi(argv[1]) : ITERATIONS;
   float lr = argc > 1 ? atof(argv[2]) : LEARNING_RATE;
   float decay = argc > 1 ? atof(argv[3]) : WEIGHT_DECAY;
 
   /* load data */
-  if (0 > load("../data/train-images-idx3-ubyte",
-               16, X * DATAPOINTS, inputs))
+  if (0 > load("../data/train-images-idx3-ubyte", 16, X * DATAPOINTS, X_input))
     return -1;
-  if (0 > load("../data/train-labels-idx1-ubyte",
-               8, DATAPOINTS, labels))
+  if (0 > load("../data/train-labels-idx1-ubyte", 8, DATAPOINTS, y_labels))
     return -1;
 
   /* init weights */
@@ -146,16 +109,6 @@ int main(int argc, char **argv)
   int samples = 0, epochs = 0;
   /* Fixed seed for reproducibility */
   srand(33);
-
-  /* Initialize memory for GPU */
-  float *dy_gpu, *dv_gpu, *dh_gpu, *p_gpu, *t_gpu, *h_gpu, *v_gpu;
-  cudaMallocManaged(&dy_gpu, B * Y * sizeof(float));
-  cudaMallocManaged(&dv_gpu, Y * H * sizeof(float));
-  cudaMallocManaged(&dh_gpu, B * H * sizeof(float));
-  cudaMallocManaged(&p_gpu, B * Y * sizeof(float));
-  cudaMallocManaged(&t_gpu, B * Y * sizeof(float));
-  cudaMallocManaged(&h_gpu, B * H * sizeof(float));
-  cudaMallocManaged(&v_gpu, Y * H * sizeof(float));
 
   double t0 = get_time();
   double start_time = t0;
@@ -176,22 +129,21 @@ int main(int argc, char **argv)
 
     for (int b = 0; b < B; b++)
     {
-      t[b * Y + labels[r[b]]] = 1.0f;
-      for (int i = 0; i < X; i++)
-        x[b * X + i] = inputs[r[b] * X + i] / 255.0f;
+      t[b * Y + y_labels[r[b]]] = 1.0f;
+      for (int i = 0; i < X; ++i)
+        x[b * X + i] = X_input[r[b] * X + i] / 255.0f;
     }
 
-/* h := w'x */
-/* col major */
-/* h [H rows, B cols] */
-/* w [X rows, H cols] */
-/* x [X rows, B cols] */
-#pragma omp parallel for // collapse(3)
+    /* h := w'x */
+    /* col major */
+    /* h [H rows, B cols] */
+    /* w [X rows, H cols] */
+    /* x [X rows, B cols] */
+    #pragma omp parallel for
     for (int j = 0; j < H; j++)
       for (int i = 0; i < X; i++)
         for (int b = 0; b < B; b++)
-          h[b * H + j] +=
-              w[j * X + i] * x[b * X + i];
+          h[b * H + j] += w[j * X + i] * x[b * X + i];
 
     /* activation function (nonlinearity) */
     for (int j = 0; j < H * B; j++)
@@ -222,7 +174,7 @@ int main(int argc, char **argv)
     smooth_act = SMOOTHING * smooth_act + (1.0f - SMOOTHING) * act_sum / (H * B);
 
     /* y := vh */
-    /* col major */
+    #pragma omp parallel for
     for (int b = 0; b < B; b++)
       for (int j = 0; j < H; j++)
         for (int k = 0; k < Y; k++)
@@ -254,7 +206,7 @@ int main(int argc, char **argv)
     float probmax[B];
 
     /* Compute the argmax for each batch*/
-    for (int b = 0; b < B; b++)
+    for (int b = 0; b < B; ++b)
     {
       argmax[b] = -1;
       probmax[b] = .0f;
@@ -266,19 +218,17 @@ int main(int argc, char **argv)
           argmax[b] = k;
         }
         c[b * Y + k] = -logf(p[b * Y + k]) * t[b * Y + k];
-        smooth_ce = smooth_ce * SMOOTHING +
-                    (1.0f - SMOOTHING) * c[b * Y + k];
+        smooth_ce = smooth_ce * SMOOTHING + (1.0f - SMOOTHING) * c[b * Y + k];
       }
-      smooth_acc = smooth_acc * SMOOTHING +
-                   (1.0f - SMOOTHING) * (argmax[b] == labels[r[b]]);
+      smooth_acc = smooth_acc * SMOOTHING + (1.0f - SMOOTHING) * (argmax[b] == y_labels[r[b]]);
     }
 
+    /* display results */
     if (0 == (samples % STATS_INTERVAL) && samples > 0)
     {
       float time_d = get_time() - t0;
       float samples_per_sec = STATS_INTERVAL / time_d;
-      float gflops_per_sec = samples_per_sec *
-                             gflops_per_sample;
+      float gflops_per_sec = samples_per_sec * gflops_per_sample;
       printf("[%4.3f s] "
              "acc=%3.2f%%, "
              "ce=%3.3f, "
@@ -290,36 +240,35 @@ int main(int argc, char **argv)
       t0 = get_time();
     }
 
-    /* backprop begin */
+    /* BACK-PROPAGATION begin */
+
     /* reset grads */
+    memset(dh, 0, sizeof(float) * H * B);
     memset(dw, 0, sizeof(float) * H * X);
+    memset(dv, 0, sizeof(float) * H * Y);
 
-    // Transfer memory from CPU to GPU
-    cuda_check_error(cudaMemcpy(p_gpu, p, sizeof(float) * B * Y, cudaMemcpyHostToDevice));
-    cuda_check_error(cudaMemcpy(t_gpu, t, sizeof(float) * B * Y, cudaMemcpyHostToDevice));
-    cuda_check_error(cudaMemcpy(h_gpu, h, sizeof(float) * B * H, cudaMemcpyHostToDevice));
-    cuda_check_error(cudaMemcpy(v_gpu, v, sizeof(float) * H * Y, cudaMemcpyHostToDevice));
-    cuda_check_error(cudaMemset(dh_gpu, 0, sizeof(float) * B * H));
-    cuda_check_error(cudaMemset(dv_gpu, 0, sizeof(float) * H * Y));
+    /* dy */
+    #pragma omp parallel for
+    for (int b = 0; b < B; b++)
+      for (int k = 0; k < Y; k++)
+        dy[b * Y + k] = p[b * Y + k] - t[b * Y + k];
 
-    // Launch kernel
-    dim3 dimBlock(32, 32, 1);
-    dim3 dimGrid(Y / 32 + 1, H / 32 + 1, 1);
-    backprop_kernel<<<dimGrid, dimBlock>>>(p_gpu, t_gpu, dv_gpu, v_gpu, dh_gpu, h_gpu);
+    /* dv := h * dy' */
+    #pragma omp parallel for
+    for (int b = 0; b < B; b++)
+      for (int j = 0; j < H; j++)
+        for (int k = 0; k < Y; k++)
+          dv[k * H + j] += h[b * H + j] * dy[b * Y + k];
 
-    // Check for errors on CUDA kernel launch
-    cuda_check_error(cudaGetLastError());
-
-    // Synchronize threads
-    cuda_check_error(cudaDeviceSynchronize());
-
-    // Transfer memory from GPU to CPU
-    cuda_check_error(cudaMemcpy(dh, dh_gpu, sizeof(float) * B * H, cudaMemcpyDeviceToHost));
-    cuda_check_error(cudaMemcpy(dv, dv_gpu, sizeof(float) * H * Y, cudaMemcpyDeviceToHost));
-
+    /* dh := v * dy */
+    #pragma omp parallel for
+    for (int b = 0; b < B; b++)
+      for (int j = 0; j < H; j++)
+        for (int k = 0; k < Y; k++)
+          dh[b * H + j] += v[k * H + j] * dy[b * Y + k];
 
     /* nonlinearity on h */
-    // #pragma omp parallel for
+    /* activation function derivative */
     for (int j = 0; j < H * B; j++)
 #if LOGISTIC
       dh[j] = dh[j] * h[j] * (1.0f - h[j]);
@@ -331,55 +280,38 @@ int main(int argc, char **argv)
     dh[j] = dh[j] * (1.0f - h[j] * h[j]);
 #endif
 
-/* dw := x * dh' */
-#pragma omp parallel for
+    /* update the weight*/
+    /* dw := x * dh' */
+    #pragma omp parallel for
     for (int j = 0; j < H; j++)
-    {
       for (int i = 0; i < X; i++)
-      {
         for (int b = 0; b < B; b++)
-        {
           dw[j * X + i] += x[b * X + i] * dh[b * H + j];
-        }
-      }
-    }
-    /* backprop end */
+    /* BACK-PROPAGATION end */
 
     /* adjust weights */
-    // #pragma omp parallel for
+    #pragma omp parallel for
     for (int i = 0; i < H * X; i++)
-    {
       w[i] = w[i] * (1.0f - decay) - dw[i] * lr;
-    }
-    // #pragma omp parallel for
+
+    #pragma omp parallel for
     for (int i = 0; i < H * Y; i++)
-    {
       v[i] = v[i] * (1.0f - decay) - dv[i] * lr;
-    }
 
     samples += B;
 
-  } while (epochs++ < max_iters && smooth_acc < TARGET_ACC);
+  } while (epochs++ < max_epochs && smooth_acc < TARGET_ACC);
 
   // Print total time
   printf("Total time: %f\n", get_time() - start_time);
 
-  /* cleanup - Main */
+  /* cleanup */
   free(x), free(w), free(dw);
   free(h), free(dh);
   free(m);
   free(v), free(dv);
   free(y), free(dy);
   free(p), free(c), free(t);
-
-  /* cleanup - GPU */
-  cudaFree(p_gpu);
-  cudaFree(t_gpu);
-  cudaFree(h_gpu);
-  cudaFree(v_gpu);
-  cudaFree(dy_gpu);
-  cudaFree(dv_gpu);
-  cudaFree(dh_gpu);
 
   return 0;
 }
