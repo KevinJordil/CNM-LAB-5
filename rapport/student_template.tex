@@ -62,12 +62,12 @@ The architecture that we built have 3 layers:
 \paragraph*{Architecture} our neural network implementation is as follows:
 
 \begin{itemize}
-	\item Input layer of size 784 (28x28 images)
-	\item Hidden layer of size 1000 (number of hidden neurons)
-	\item Output layer of size 10 (number of class of the dataset)
+	\item Input layer $I$ of size 784 (28x28 images)
+	\item Hidden layer $H$ of size 1000 (number of hidden neurons)
+	\item Output layer $O$ of size 10 (number of class of the dataset)
 \end{itemize}
 
-We used a c implementation who consists of a single file with all the functions needed to train and test the neural network.
+We used a c implementation who consists of a single file with all the functions needed to train and test the neural network. The batch size $B=10$.
 
 \paragraph*{Dataset} We used the fashion dataset which is a commonly used dataset in machine learning and computer vision task.
 He consists of a collection of Zalando shopping items such as shirts, pants and shoes. There are in total 10 categories.
@@ -80,13 +80,13 @@ The rest of the columns contain the pixel-values of the associated image.
 
 \section{Grayscale Conversion Program}
 
-\paragraph*{Definition} We ran into troubles with the cuda neural network acceleration so we choosed an auxiliary program to be accelerated with cuda.
+\paragraph*{Definition} We ran into troubles with the cuda neural network acceleration so we developped an auxiliary program to be accelerated with cuda.
 The program converts a color image to a grayscale image which is a good idea to implement with our multi layer perceptron.
 Because our mlp necessitates a grayscale image as input we can convert rgb images to grayscale images with this program.
 Furthermore this task is a good example to show the acceleration of a program with cuda.
 
-\paragraph*{Principle} For each pixel of the image, we calculate 0.56 * red + 0.33 * green + 0.11 * blue.
-The result is the grayscale value of the pixel. We then set the red, green and blue values of the pixel to the grayscale value.
+\paragraph*{Principle} For each pixel of the image, we calculate the average of all color channels.
+The result is the grayscale value of the pixel. Then we replace the color channels with the grayscale value in a new image.
 
 \pagebreak
 
@@ -156,12 +156,7 @@ The result is the grayscale value of the pixel. We then set the red, green and b
 	\label{tab:mlp_accelerated_cuda}
 \end{table}
 
-\paragraph*{Analysis} as we can see, the OpenMP implementation is the fastest then the baseline and finally the CUDA and OpenMP is the slowest.
-The CUDA profiler results are showed on table \ref{tab:mlp_cuda_profiler}.
-The CUDA profiler shows that the CUDA memcpy is the most time consuming operation, followed by the backprop\_kernel and the CUDA memset.
-So our kernel function is too short to benefit from the GPU acceleration. The cost to move the data to memory are too high.
-
-\begin{table}[h]	\centering
+\begin{table}[h]\centering
 	\begin{tabular}{|l|c|c|c|c|c|c|c|}
 		\hline
 		\textbf{Type} & \textbf{Time perc.} & \textbf{Time} & \textbf{Calls} & \textbf{Avg} & \textbf{Name}         \\ \hline
@@ -186,17 +181,176 @@ So our kernel function is too short to benefit from the GPU acceleration. The co
 	\label{tab:mlp_cuda_profiler}
 \end{table}
 
+\paragraph*{Grayscale baseline} In the following results, the image name contains the resolution in pixels. Here is the baseline execution time:
+
+\begin{itemize}
+	\item ./main chicky\_512\_512.png -> Time elapsed: 3.431923 ms
+	\item ./main avatar\_5000\_2381.jpg -> Time elapsed: 151.122006 ms
+	\item ./main winter\_10667\_6000.jpg -> Time elapsed: 803.954043 ms
+\end{itemize}
+
+\paragraph*{Grayscale OpenMP} The following results use the same images but with CUDA acceleration:
+
+\begin{itemize}
+	\item	./main chicky\_512\_512.png -> Time elapsed: 2.095706 ms
+	\item	./main avatar\_5000\_2381.jpg -> Time elapsed: 61.278724 ms
+	\item	./main winter\_10667\_6000.jpg -> Time elapsed: 209.700440 ms
+\end{itemize}
 
 \section{Complexity Analysis}
 
-\section{Accelerated part}
+\paragraph*{MLP} The MLP is a feedforward neural network, so the complexity is bounded by the biggest loop, which is the backpropagation loop in $O(\#epoch  \cdot H \cdot O \cdot B)$
+
+\paragraph*{Grayscale} The complexity is one computation for every pixel so $O(m \cdot n )$ where $m$ is the number of rows and $n$ is the number of columns of the image.
 
 \section{Theoretical acceleration}
 
+\paragraph*{MLP} We must usde Amdahl's law to calculate the theoretical acceleration of the MLP.
+Therefore the speedup is $S = d\frac{1}{1 - p + \dfrac{p}{s}}$
+where $p$ is the percentage of the code that can be parallelized before optimization and $s$ is the number of threads.
 
-
+\pagebreak
 \assignmentSection{Stage 3 – Acceleration}
 
+\section{Process}
+First, we added OpenMP to the base code. As a result, we have a slight performance increase.
+Then we wanted to add a CUDA kernel function as requested.
+However, the performance was not as good as the original code.
+So we spent a lot of time trying to optimize the CUDA code.
+We tried to make several CUDA kernel functions, to use cuBLAS, to make memory optimizations.
+Unfortunately, we never managed to improve the code base with CUDA
+because the transfer between the CPU and the GPU took more time than the CUDA kernel function itself.
+Therefore, we decided to make a second application and optimize it with a CUDA kernel function.
+
+\section{Accelerated parts}
+
+\paragraph*{Choice}
+We chose to keep the optimization only with OpenMP on MLP because it is more efficient alone than with CUDA optimizations.
+To respect the instructions and accelerate part of the code on GPU, we used the CUDA runtime library with CUDA kernel functions which allowed us to have good results.
+We looked at using cuBLAS but it was not adapted because it is intended for matrix calculations and it is not really what is done in our example.
+We did not use cuDNN because it is not suitable for our needs as it is specifically created for deep neural networks.
+
+\paragraph*{Data} For MLP, we use the Fashion MINST dataset as explained above.
+So we will have several large arrays but mostly loops that will go through these arrays.
+So we found three triple for loops that took a lot of execution time according to us.
+In a first step, we regenerated a single triple loop with these three loops, which will simplify the transition to CUDA kernel. In a second step, we put all the data on the GPU.
+Then, we created a CUDA kernel function which allows to replace the generated triple for loop.
+
+
+\begin{lstlisting}[language=C, caption="Original code with triple loop"]
+	/* dy */
+	for (int b = 0; b < B; b++)
+	  for (int k = 0; k < Y; k++)
+		dy[b * Y + k] = p[b * Y + k] - t[b * Y + k];
+	/* dv := h * dy' */
+	for (int b = 0; b < B; b++)
+	  for (int j = 0; j < H; j++)
+		for (int k = 0; k < Y; k++)
+		  dv[k * H + j] += h[b * H + j] * dy[b * Y + k];
+	/* dh := v * dy */
+	for (int b = 0; b < B; b++)
+	  for (int j = 0; j < H; j++)
+		for (int k = 0; k < Y; k++)
+		  dh[b * H + j] += v[k * H + j] * dy[b * Y + k];
+\end{lstlisting}
+
+
+\begin{lstlisting}[language=C, caption="Edited nested triple loop"]
+	/* dy */
+	for (int b = 0; b < B; b++)
+	  for (int k = 0; k < Y; k++)
+		for (int j = 0; j < H; j++)
+		{
+		  dy[b * Y + k] = p[b * Y + k] - t[b * Y + k];
+		  dv[k * H + j] += h[b * H + j] * dy[b * Y + k];
+		  dh[b * H + j] += v[k * H + j] * dy[b * Y + k];
+		}
+\end{lstlisting}
+
+\begin{lstlisting}[language=C, caption="CUDA kernel function to calculate back\_propagation"]
+	// Cuda kernel function of loop
+	__global__ void backprop_kernel(float *p, float *t, float *dv, float *v, float *dh, float *h)
+	{
+		int y_idx = threadIdx.x + blockIdx.x * blockDim.x;
+		int h_idx = threadIdx.y + blockIdx.y * blockDim.y;
+	
+		if (y_idx >= H || h_idx >= Y)
+			return;
+	
+		float dy, dh_gpu, dv_gpu;
+	
+		for(int b_idx = 0; b_idx < B; b_idx++){
+		  dy = p[b_idx * Y + h_idx] - t[b_idx * Y + h_idx];
+		  dv_gpu = h[b_idx * H + y_idx] * dy;
+		  dh_gpu = v[h_idx * H + y_idx] * dy;
+		  atomicAdd(&dv[h_idx * H + y_idx], dv_gpu);
+		  atomicAdd(&dh[b_idx * H + y_idx], dh_gpu);
+		}
+	}
+	
+	dim3 dimBlock(32, 32, 1);
+	dim3 dimGrid(Y / 32 + 1, H / 32 + 1, 1);
+	backprop_kernel<<<dimGrid, dimBlock>>>(p_gpu, t_gpu, dv_gpu, v_gpu, dh_gpu, h_gpu);
+\end{lstlisting}
+
+As said before, this code is still slower than the original and using OpenMP alone is faster.
+So there is an OpenMP directive (\#pragma omp parallel for) before each for loop.
+The number of threads is set to 4.
+
+For the application that transforms the image into grayscale, there is a double for loop that runs through the image.
+So we created a CUDA kernel function that allows to replace the generated double for loop and thus to use the GPU computing power.
+
+\begin{lstlisting}[language=C, caption="Original grayscale code"]
+	for (int y = 0; y < height; y++)
+	{
+		for (int x = 0; x < width; x++)
+		{
+			Vec3b color = color_image.at<Vec3b>(y, x);
+			int gray = (color[0] + color[1] + color[2]) / 3;
+			gray_image.at<unsigned char>(y, x) = gray;
+		}
+	}
+\end{lstlisting}
+
+
+\begin{lstlisting}[language=C, caption="CUDA kernel function to convert image to grayscale"]
+	__global__ void convertToGray(uchar3 *input, unsigned char *output, int width, int height)
+	{
+		int x = blockIdx.x * blockDim.x + threadIdx.x;
+		int y = blockIdx.y * blockDim.y + threadIdx.y;
+	
+		if (x < width && y < height)
+		{
+			output[y * width + x] = (input[y * width + x].x + input[y * width + x].y + input[y * width + x].z) / 3;
+		}
+	}
+	
+	dim3 block(BLOCK_SIZE, BLOCK_SIZE);
+	dim3 grid((width + block.x - 1) / block.x, (height + block.y - 1) / block.y);
+	
+	convertToGray<<<grid, block>>>(d_color_image, d_gray_image, width, height);
+\end{lstlisting}
+
+
+\section{Memory Analysis}
+
+\pagebreak
 \assignmentSection{Stage 4 – Analysis of results}
+
+Given the work you performed in Stage 3, we want you know to analyse the results obtained and draw
+some conclusions:
+• Analysis of the results: what is the performance enhancement achieved? Where does it come
+from and why? What is the new bottleneck created?
+• Potential future lines: seeing the acceleration results, what other things should you accelerate?
+Now that you see the results, should you have done something different?
+
+\paragraph*{MLP Analysis} As we can see, the OpenMP implementation is the fastest then the baseline and finally the CUDA and OpenMP is the slowest.
+The CUDA profiler results are showed on table \ref{tab:mlp_cuda_profiler}.
+The CUDA profiler shows that the CUDA memcpy is the most time consuming operation, followed by the backprop\_kernel and the CUDA memset.
+So our kernel function is too short to benefit from the GPU acceleration. The cost to move the data to memory are too high.
+
+\paragraph*{Grayscale Analysis}
+For the grayscale algorithm, we can see that the acceleration is substantial. For instance, for the winter image the gpu algorithm is 4 time faster.
+
 
 \end{document}
