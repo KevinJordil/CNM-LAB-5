@@ -156,31 +156,6 @@ The result is the grayscale value of the pixel. Then we replace the color channe
 	\label{tab:mlp_accelerated_cuda}
 \end{table}
 
-\begin{table}[h]\centering
-	\begin{tabular}{|l|c|c|c|c|c|c|c|}
-		\hline
-		\textbf{Type} & \textbf{Time perc.} & \textbf{Time} & \textbf{Calls} & \textbf{Avg} & \textbf{Name}         \\ \hline
-		GPU :         & 47.10\%             & 15.4163s      & 410754         & 37.531us     & CUDA memcpy HtoH      \\ \hline
-		              & 35.72\%             & 11.6917s      & 68459          & 170.78us     & backprop\_kernel      \\ \hline
-		              & 17.18\%             & 5.62353s      & 136918         & 41.072us     & CUDA memset           \\ \hline
-		API calls:    & 74.08\%             & 145.662s      & 410754         & 354.62us     & cudaMemcpy            \\ \hline
-		              & 13.21\%             & 25.9788s      & 136918         & 189.74us     & cudaMemset            \\ \hline
-		              & 9.01\%              & 17.7185s      & 68459          & 258.82us     & cudaDeviceSynchronize \\ \hline
-		              & 3.49\%              & 6.86282s      & 68459          & 100.25us     & cudaLaunchKernel      \\ \hline
-		              & 0.18\%              & 344.80ms      & 7              & 49.257ms     & cudaMallocManaged     \\ \hline
-		              & 0.04\%              & 72.091ms      & 68459          & 1.0530us     & cudaGetLastError      \\ \hline
-		              & 0.00\%              & 953.77us      & 7              & 136.25us     & cudaFree              \\ \hline
-		              & 0.00\%              & 108.55us      & 97             & 1.1190us     & cuDeviceGetAttribute  \\ \hline
-		              & 0.00\%              & 10.521us      & 1              & 10.521us     & cuDeviceTotalMem      \\ \hline
-		              & 0.00\%              & 7.3430us      & 3              & 2.4470us     & cuDeviceGetCount      \\ \hline
-		              & 0.00\%              & 3.8540us      & 2              & 1.9270us     & cuDeviceGet           \\ \hline
-		              & 0.00\%              & 1.5100us      & 1              & 1.5100us     & cuDeviceGetName       \\ \hline
-		              & 0.00\%              & 938ns         & 1              & 938ns        & cuDeviceGetUuid       \\ \hline
-	\end{tabular}
-	\caption{MLP CUDA accelerated GPU profiling results}
-	\label{tab:mlp_cuda_profiler}
-\end{table}
-
 \paragraph*{Grayscale baseline} In the following results, the image name contains the resolution in pixels. Here is the baseline execution time:
 
 \begin{itemize}
@@ -205,9 +180,21 @@ The result is the grayscale value of the pixel. Then we replace the color channe
 
 \section{Theoretical acceleration}
 
-\paragraph*{MLP} We must usde Amdahl's law to calculate the theoretical acceleration of the MLP.
-Therefore the speedup is $S = d\frac{1}{1 - p + \dfrac{p}{s}}$
-where $p$ is the percentage of the code that can be parallelized before optimization and $s$ is the number of threads.
+\paragraph*{Hardware} The theoretical limitations depends on the hardware.
+In our case, we use a jetson nano which has a max threads/block bound of 1024 and 128 CUDA cores.
+Therefore, if we want to accelerate our application properly, we need want to maximize the number of thread running the same operation on the warps.
+In our case, we have a lot of small operations in parallel and we therefore we can't use the full power of the GPU because memory transfer will be too long.
+
+If we analyze the GPU time only with nprof on \ref{tab:mlp_cuda_profiler}, we can use Amdahl's law to calculate the theoretical acceleration.
+The kernel use 11.69 second, and the memcpy use 15.41 second and the memset use 5.6s. The part we can accelerate is only over those 11.69seconds.
+Therefore, because the total GPU time takes more than running on the CPU baseline, we can't accelerate the application with the GPU faster than the cpu.
+
+\paragraph*{Roofline} 
+
+The max performance is 472 GFLOPs and the max memory bandwidth is 25.6G GB/s. Therefore, the jetson is balanced with CI = 18.43.
+If we calculate the number of operations on the backpropagation kernel we have: $Y * H * B * 18op = 1.8M$. The number of data transfered is $Y * H * B * 4Bytes = 0.4M$. 
+Therefore the CI of our kernel is 4.5. Using the symetry in the roofline model our kernel performance is $ 472 / 18.43 * 4.5 = 115.24 GFLOPs$.
+As we can see, we are not limited by the performance but by the memory.
 
 \pagebreak
 \assignmentSection{Stage 3 – Acceleration}
@@ -332,8 +319,6 @@ So we created a CUDA kernel function that allows to replace the generated double
 \end{lstlisting}
 
 
-\section{Memory Analysis}
-
 \pagebreak
 \assignmentSection{Stage 4 – Analysis of results}
 
@@ -352,5 +337,29 @@ So our kernel function is too short to benefit from the GPU acceleration. The co
 \paragraph*{Grayscale Analysis}
 For the grayscale algorithm, we can see that the acceleration is substantial. For instance, for the winter image the gpu algorithm is 4 time faster.
 
+\begin{table}[h]\centering
+	\begin{tabular}{|l|c|c|c|c|c|c|c|}
+		\hline
+		\textbf{Type} & \textbf{Time perc.} & \textbf{Time} & \textbf{Calls} & \textbf{Avg} & \textbf{Name}         \\ \hline
+		GPU :         & 47.10\%             & 15.4163s      & 410754         & 37.531us     & CUDA memcpy HtoH      \\ \hline
+		              & 35.72\%             & 11.6917s      & 68459          & 170.78us     & backprop\_kernel      \\ \hline
+		              & 17.18\%             & 5.62353s      & 136918         & 41.072us     & CUDA memset           \\ \hline
+		API calls:    & 74.08\%             & 145.662s      & 410754         & 354.62us     & cudaMemcpy            \\ \hline
+		              & 13.21\%             & 25.9788s      & 136918         & 189.74us     & cudaMemset            \\ \hline
+		              & 9.01\%              & 17.7185s      & 68459          & 258.82us     & cudaDeviceSynchronize \\ \hline
+		              & 3.49\%              & 6.86282s      & 68459          & 100.25us     & cudaLaunchKernel      \\ \hline
+		              & 0.18\%              & 344.80ms      & 7              & 49.257ms     & cudaMallocManaged     \\ \hline
+		              & 0.04\%              & 72.091ms      & 68459          & 1.0530us     & cudaGetLastError      \\ \hline
+		              & 0.00\%              & 953.77us      & 7              & 136.25us     & cudaFree              \\ \hline
+		              & 0.00\%              & 108.55us      & 97             & 1.1190us     & cuDeviceGetAttribute  \\ \hline
+		              & 0.00\%              & 10.521us      & 1              & 10.521us     & cuDeviceTotalMem      \\ \hline
+		              & 0.00\%              & 7.3430us      & 3              & 2.4470us     & cuDeviceGetCount      \\ \hline
+		              & 0.00\%              & 3.8540us      & 2              & 1.9270us     & cuDeviceGet           \\ \hline
+		              & 0.00\%              & 1.5100us      & 1              & 1.5100us     & cuDeviceGetName       \\ \hline
+		              & 0.00\%              & 938ns         & 1              & 938ns        & cuDeviceGetUuid       \\ \hline
+	\end{tabular}
+	\caption{MLP CUDA accelerated GPU profiling results}
+	\label{tab:mlp_cuda_profiler}
+\end{table}
 
 \end{document}

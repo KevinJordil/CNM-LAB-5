@@ -1,7 +1,7 @@
 # Fdb version 3
-["pdflatex"] 1675107305 "/home/olivier/Documents/heig/s5/cnm/CNM-MLP-C/rapport/student_template.tex" "student_template.pdf" "student_template" 1675107306
+["pdflatex"] 1675165847 "/home/olivier/Documents/heig/s5/cnm/CNM-MLP-C/rapport/student_template.tex" "student_template.pdf" "student_template" 1675165848
   "/etc/texmf/web2c/texmf.cnf" 1651173939 475 c0e671620eb5563b2130f56340a5fde8 ""
-  "/home/olivier/Documents/heig/s5/cnm/CNM-MLP-C/rapport/student_template.tex" 1675107278 18710 3444de5831216f139d99a39f2ff9aae9 ""
+  "/home/olivier/Documents/heig/s5/cnm/CNM-MLP-C/rapport/student_template.tex" 1675165846 19863 7ae77da7fafc60f63e9e87513826a8d7 ""
   "/usr/share/texlive/texmf-dist/fonts/enc/dvips/roboto/rbto_b5rac7.enc" 1576101225 3075 0696ceafc85b8352a913efb9ba64bc17 ""
   "/usr/share/texlive/texmf-dist/fonts/enc/dvips/roboto/rbto_ocbbsb.enc" 1576101225 3314 42351250ac95a91f488e14b5633f75ce ""
   "/usr/share/texlive/texmf-dist/fonts/enc/dvips/roboto/rbto_shbyjm.enc" 1576101225 3538 3cc15b33463d791b3c295db15d04bbd6 ""
@@ -37,11 +37,8 @@
   "/usr/share/texlive/texmf-dist/fonts/type1/google/roboto/Roboto-Light.pfb" 1576101225 209805 1361f1c57b101196d3338eb8ba6b2ced ""
   "/usr/share/texlive/texmf-dist/fonts/type1/google/roboto/Roboto-LightItalic.pfb" 1576101225 228852 75f71f5cb799b7d16a2065f2ce21013d ""
   "/usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb" 1248133631 36299 5f9df58c2139e7edcf37c8fca4bd384d ""
-  "/usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi8.pfb" 1248133631 35469 70d41d2b9ea31d5d813066df7c99281c ""
   "/usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb" 1248133631 35752 024fb6c41858982481f6968b5fc26508 ""
-  "/usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmr8.pfb" 1248133631 32726 0a1aea6fcd6468ee2cf64d891f5c43c8 ""
   "/usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb" 1248133631 32569 5e5ddc8df908dea60932f3c484a54c0d ""
-  "/usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy8.pfb" 1248133631 32626 4f5c1b83753b1dd3a97d1b399a005b4b ""
   "/usr/share/texlive/texmf-dist/fonts/vf/google/roboto/Roboto-Bold-lf-t1.vf" 1576101225 1752 10f701f4d31b7e0acdc3f8b9dc833b2d ""
   "/usr/share/texlive/texmf-dist/fonts/vf/google/roboto/Roboto-Light-lf-sc-t1.vf" 1576101225 1756 8b4cfca178f962bf6882b7c30ee7bb3d ""
   "/usr/share/texlive/texmf-dist/fonts/vf/google/roboto/Roboto-Light-lf-t1.vf" 1576101225 1752 4be4720ab33468ee4c06f4c0e651a15e ""
@@ -198,8 +195,8 @@
   "/var/lib/texmf/web2c/pdftex/pdflatex.fmt" 1651174191 2799466 ce83e10d4c5c693d8e99d77200d21e77 ""
   "images/heig.png" 1652389877 33169 5a95c9941b242399597a88b520edec6c ""
   "structure.tex" 1675107304 8822 f8507c342137bc58c75c8afd285387e4 ""
-  "student_template.aux" 1675107306 2595 a7a74877aee5b53522b935ed83e05033 "pdflatex"
-  "student_template.tex" 1675107278 18710 3444de5831216f139d99a39f2ff9aae9 ""
+  "student_template.aux" 1675165848 2492 34dd0cb454aa1770b8ccd07b0cd87a68 "pdflatex"
+  "student_template.tex" 1675165846 19863 7ae77da7fafc60f63e9e87513826a8d7 ""
   (generated)
   "student_template.aux"
   "student_template.log"
