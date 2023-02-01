@@ -185,7 +185,7 @@ In our case, we use a jetson nano which has a max threads/block bound of 1024 an
 Therefore, if we want to accelerate our application properly, we need want to maximize the number of thread running the same operation on the warps.
 In our case, we have a lot of small operations in parallel and we therefore we can't use the full power of the GPU because memory transfer will be too long.
 
-If we analyze the GPU time only with nprof on \ref{tab:mlp_cuda_profiler}, we can use Amdahl's law to calculate the theoretical acceleration.
+If we analyze the GPU time only with nprof on table \ref{tab:mlp_cuda_profiler}, we can use Amdahl's law to calculate the theoretical acceleration.
 The kernel use 11.69 second, and the memcpy use 15.41 second and the memset use 5.6s. The part we can accelerate is only over those 11.69seconds.
 Therefore, because the total GPU time takes more than running on the CPU baseline, we can't accelerate the application with the GPU faster than the cpu.
 
@@ -196,7 +196,6 @@ If we calculate the number of operations on the backpropagation kernel we have: 
 Therefore the CI of our kernel is 4.5. Using the symetry in the roofline model our kernel performance is $ 472 / 18.43 * 4.5 = 115.24 GFLOPs$.
 As we can see, we are not limited by the performance but by the memory.
 
-\pagebreak
 \assignmentSection{Stage 3 – Acceleration}
 
 \section{Process}
@@ -318,24 +317,21 @@ So we created a CUDA kernel function that allows to replace the generated double
 	convertToGray<<<grid, block>>>(d_color_image, d_gray_image, width, height);
 \end{lstlisting}
 
-
-\pagebreak
 \assignmentSection{Stage 4 – Analysis of results}
 
-Given the work you performed in Stage 3, we want you know to analyse the results obtained and draw
-some conclusions:
-• Analysis of the results: what is the performance enhancement achieved? Where does it come
-from and why? What is the new bottleneck created?
-• Potential future lines: seeing the acceleration results, what other things should you accelerate?
-Now that you see the results, should you have done something different?
-
 \paragraph*{MLP Analysis} As we can see, the OpenMP implementation is the fastest then the baseline and finally the CUDA and OpenMP is the slowest.
-The CUDA profiler results are showed on table \ref{tab:mlp_cuda_profiler}.
+The CUDA profiler results for the mlp experiment are showed on table \ref{tab:mlp_cuda_profiler}.
 The CUDA profiler shows that the CUDA memcpy is the most time consuming operation, followed by the backprop\_kernel and the CUDA memset.
-So our kernel function is too short to benefit from the GPU acceleration. The cost to move the data to memory are too high.
+So our kernel function is too short to benefit from the GPU acceleration. The cost to move the data to memory are too high. 
+To conclude, we tried to optimize the application with OpenMP and CUDA. 
+With OpenMP, we were able to speed up the application but not to great extent because of the hardware available. The CPU is only a quad core.
+With CUDA, we wern't able to speed up the application because of the memory bandwidth bottlenecks described in the last section.
 
 \paragraph*{Grayscale Analysis}
-For the grayscale algorithm, we can see that the acceleration is substantial. For instance, for the winter image the gpu algorithm is 4 time faster.
+For the grayscale algorithm, we can see that the acceleration is substantial. For instance, for the winter image the GPU algorithm is 4 time faster. 
+This is achieved with the grayscale kernel. The task is highly parallelizable and the kernel is able to use most of the threads available on the GPU
+which is why the speedup is significant. 
+As we can see in the results, the greater the image, the greater the speedup.
 
 \begin{table}[h]\centering
 	\begin{tabular}{|l|c|c|c|c|c|c|c|}
@@ -361,5 +357,18 @@ For the grayscale algorithm, we can see that the acceleration is substantial. Fo
 	\caption{MLP CUDA accelerated GPU profiling results}
 	\label{tab:mlp_cuda_profiler}
 \end{table}
+
+\paragraph*{MLP future improvement}
+
+Concerning MLP, with advanced knowledge it is surely possible to do the whole processing on GPU, which would surely be more optimized in the case of a nano jetson.
+However we lack the knowledge to do it properly. 
+Maybe there are other CUDA libraries that allow to do more complex operations and therefore to speed up some parts of the application that take a lot of time. 
+I also think that the neural network is too small to be optimized properly and efficiently on GPU. 
+
+\paragraph*{Grayscale future improvement}
+
+Concerning the grayscale transforming application, there are already made functions of openCV optimized for the GPU that are even more efficient. 
+However, this was not the purpose of this lab. 
+There are even functions in OpenCV that integrate CUDA functions that allow to use GPU resources to the maximum.
 
 \end{document}
